@@ -13,7 +13,7 @@ export default function HomePage() {
   useEffect(() => {
     if (status === 'loading') return; // Wait for session to load
     if (!session) {
-      router.replace('/'); // Redirect if not signed in
+      void router.replace('/'); // Redirect if not signed in
     }
   }, [session, status, router]);
 
@@ -24,7 +24,7 @@ export default function HomePage() {
   const { data: bases, refetch } = api.base.getAll.useQuery();
   const createBase = api.base.create.useMutation({
     onSuccess: () => {
-      refetch();
+      void refetch();
       setAddingBase(false);
       setNewBaseName("");
     },
@@ -40,7 +40,7 @@ export default function HomePage() {
   };
 
   const handleSignOut = async () => {
-    router.push('/api/auth/signout');
+    void router.push('/api/auth/signout');
   };
 
   const toggleMenu = () => setMenuOpen(prev => !prev);
@@ -98,7 +98,7 @@ export default function HomePage() {
                   value={newBaseName}
                   onChange={(e) => setNewBaseName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddBase();
+                    if (e.key === 'Enter') void handleAddBase();
                     if (e.key === 'Escape') {
                       setAddingBase(false);
                       setNewBaseName("");
@@ -109,7 +109,7 @@ export default function HomePage() {
                   autoFocus
                 />
                 <button
-                  onClick={handleAddBase}
+                  onClick={() => void handleAddBase()}
                   className="mt-1 rounded bg-blue-500 px-3 py-1 text-white hover:bg-blue-600"
                 >
                   Create
