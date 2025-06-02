@@ -123,17 +123,18 @@ model Row {
 }
 
 model CellValue {
-  id        String   @id @default(cuid())
-  row       Row      @relation(fields: [rowId], references: [id], onDelete: Cascade)
-  rowId     String
-  column    Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  columnId  String
-
-  // Either of these is populated depending on the column type
+  id          String   @id @default(uuid())
+  rowId       String
+  columnId    String
   textValue   String?
   numberValue Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  createdAt DateTime @default(now())
+  row         Row      @relation(fields: [rowId], references: [id])
+  column      Column   @relation(fields: [columnId], references: [id])
+
+  @@unique([rowId, columnId])
 }
 
 enum ColumnType {
