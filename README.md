@@ -1,29 +1,90 @@
-t# Create T3 App
+# Airtable Clone Project
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+This project is an Airtable-like spreadsheet/database app built with the T3 stack, TanStack Table, and PostgreSQL.  
+It focuses on performance and usability, supporting very large tables with virtualized infinite scrolling, advanced filtering, sorting, and views.
 
-## What's next? How do I make an app with this?
+---
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+## Project Overview
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+- Built using [create-t3-app](https://create.t3.gg/)
+- Deploys on Vercel
+- Uses PostgreSQL for the database
+- TanStack Table for the frontend table UI
+- tRPC for backend API communication
+- Google OAuth for authentication
+- Supports bases, tables, columns, and cells (text & number types)
+- Smooth inline editing with keyboard navigation
+- Virtualized infinite scrolling for very large datasets (100k+ rows)
+- Database-level filtering, sorting, searching
+- Save and switch between views (filters, sorting, column visibility)
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+---
 
-## Learn More
+## Feature Checklist
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+### Authentication & Base/Table Management
+- ✅ Google Sign-In authentication
+- ✅ Users can create multiple **bases**
+- ✅ Each base can have multiple **tables**
+- [ ] New tables start with default columns and rows (using Faker.js)
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+### Table UI & Editing
+- ✅ Airtable-inspired table UI using TanStack Table
+- [ ] Editable column headers (names and types: TEXT, NUMBER)
+- ✅ Dynamically add new columns (TEXT and NUMBER)
+- ✅ Inline editable cells
+- [ ] Smooth tab navigation across cells
+- [ ] Default rows and columns generated on table creation
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
+### Performance & Virtualization
+- ✅ Use TanStack virtualizer for row virtualization
+- [ ] Implement cursor-based pagination via tRPC
+- [ ] Button to add 100,000 Faker-generated rows dynamically
+- [ ] Smooth scrolling and rendering with 100k+ rows
+- [ ] Scalable to 1 million rows without lag
 
-## How do I deploy this?
+### Search, Filter, and Sort (Database-side)
+- [ ] Global search across all cells
+- [ ] Column filters:
+  - Text: contains, not contains, is empty, is not empty, equals
+  - Number: greater than, less than, equals
+- [ ] Sorting:
+  - Text: A→Z, Z→A
+  - Number: ascending, descending
+- [ ] Save and load views with filters, sorting, and column visibility
+- [ ] Ability to hide/show columns dynamically
 
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+### UX & Loading States
+- [ ] Loading placeholders/spinners during data fetching
+- [ ] Disabled inputs/buttons while saving/loading data
+- [ ] Keyboard friendly navigation and editing
+
+---
+
+## Development & Deployment
+
+- Setup with `create-t3-app`
+- PostgreSQL database with efficient schema for large tables
+- Prisma as ORM
+- tRPC for API routes
+- Deployment to Vercel
+
+
+## Future Improvements (Optional)
+
+- Dark mode toggle
+- Drag-to-reorder columns
+- Undo/Redo history for cell edits
+- Bulk row operations (delete, copy)
+- Additional column types (date, select, checkbox)
+
+---
+
+## How to Run Locally
+
+```bash
+git clone <repo-url>
+cd airtable-clone
+npm install
+npm dev

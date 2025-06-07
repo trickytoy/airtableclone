@@ -42,7 +42,7 @@ export default function BasePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f2f4f8] flex flex-col h-full">
+    <div className="bg-[#f2f4f8] flex flex-col h-screen">
       <header className="flex items-center justify-between bg-[#166ee1] px-6 py-2 shadow-sm">
         <div className="flex items-center gap-3">
           <Image
@@ -97,7 +97,10 @@ export default function BasePage() {
       </div>
 
       {/* Pass selectedTableId to CurrTable */}
-      <CurrTable tableId={selectedTableId} />
+      <div className="flex-1 min-h-0 overflow-hidden">
+          <CurrTable tableId={selectedTableId} />
+      </div>
+      
 
       {/* Modal */}
       {showModal && (

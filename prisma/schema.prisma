@@ -119,6 +119,8 @@ model Row {
 
   createdAt DateTime @default(now())
 
+  batchId   String?
+
   cellValues CellValue[]
 }
 

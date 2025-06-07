@@ -33,14 +33,6 @@ export const tableRouter = createTRPCRouter({
       return await ctx.db.table.findMany({
         where: { baseId },
         orderBy: { createdAt: "asc" },
-        include: {
-          columns: true,
-          rows: {
-            include: {
-              cellValues: true,
-            },
-          },
-        },
       });
     }),
   
@@ -49,14 +41,6 @@ export const tableRouter = createTRPCRouter({
   .query(async ({ input: { id }, ctx }) => {
     return await ctx.db.table.findUnique({
       where: { id },
-      include: {
-        columns: true,
-        rows: {
-          include: {
-            cellValues: true,
-          },
-        },
-      },
     });
   }),
 

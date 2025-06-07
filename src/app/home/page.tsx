@@ -20,7 +20,7 @@ export default function HomePage() {
   const [addingBase, setAddingBase] = useState(false);
   const [newBaseName, setNewBaseName] = useState("");
 
-  const { data: bases, refetch } = api.base.getAll.useQuery();
+  const { data: bases, refetch, isLoading } = api.base.getAll.useQuery();
   const createBase = api.base.create.useMutation({
     onSuccess: () => {
       void refetch();
@@ -64,9 +64,15 @@ export default function HomePage() {
           ))}
 
           {/* Add Base Input or Button */}
-          <div className="flex h-32 flex-col items-center justify-center gap-1 rounded-md border-2 border-blue-400 bg-white p-2 text-sm text-black hover:border-blue-600 hover:text-blue-600">
-            {addingBase ? (
+          {isLoading ? 
+            (<div className="fixed inset-0 z-50 flex items-center justify-center">
+              <Image src="/Airtable_Logo_blue.svg" className="h-10 w-10 animate-spin " width={100} height={100} alt="Logo" />
+            </div>
+            )            
+               : <div className="flex h-32 flex-col items-center justify-center gap-1 rounded-md border-2 border-blue-400 bg-white p-2 text-sm text-black hover:border-blue-600 hover:text-blue-600">
+                {addingBase ? (
               <>
+              
                 <input
                   type="text"
                   value={newBaseName}
@@ -99,6 +105,7 @@ export default function HomePage() {
               </button>
             )}
           </div>
+}
         </div>
       </section>
     </main>
