@@ -38,7 +38,7 @@ It focuses on performance and usability, supporting very large tables with virtu
 - [ ] Default rows and columns generated on table creation
 
 ### Performance & Virtualization
-- ✅ Use TanStack virtualizer for row virtualization
+- [x] Use TanStack virtualizer for row virtualization
 - [ ] Implement cursor-based pagination via tRPC
 - [ ] Button to add 100,000 Faker-generated rows dynamically
 - [ ] Smooth scrolling and rendering with 100k+ rows
