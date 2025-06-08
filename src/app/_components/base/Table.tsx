@@ -40,11 +40,21 @@ type TableData = {
   rows: Row[]
 }
 
-type TableViewProps = {
-  tableId?: string | null
+type FilterCondition = {
+  id: string
+  columnId: string
+  operator: "is" | "is not" | "contains" | "does not contain" | "is empty" | "is not empty" | "=" | "!=" | ">" | "<"
+  value: string
 }
 
-export default function TableView({ tableId }: TableViewProps) {
+type TableViewProps = {
+  tableId?: string | null
+  filters?: FilterCondition[]
+}
+
+
+
+export default function TableView({ tableId, filters = [] }: TableViewProps) {
   const [newColumnName, setNewColumnName] = useState("")
   const [newColumnType, setNewColumnType] = useState<"TEXT" | "NUMBER">("TEXT")
   const [isAddColumnDialogOpen, setIsAddColumnDialogOpen] = useState(false)
@@ -64,6 +74,14 @@ export default function TableView({ tableId }: TableViewProps) {
   const { data: tableinfo } = api.table.getById.useQuery({ id: tableId ?? "" });
   const columnQuery = api.column.getByTable.useQuery({ tableId: tableId ?? "" });
 
+  const transformedFilters = filters.map(filter => ({
+    columnId: filter.columnId,
+    operator: filter.operator,
+    value: filter.value
+  }))
+
+  console.log(transformedFilters)
+
   const {
     data: rowQuery,
     fetchNextPage,
@@ -75,6 +93,7 @@ export default function TableView({ tableId }: TableViewProps) {
     {
       tableId: tableId ?? "",
       limit: 50,
+      filters: transformedFilters
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,

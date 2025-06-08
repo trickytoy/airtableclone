@@ -26,7 +26,7 @@ import {
   Loader2,
 } from "lucide-react";
 import TableView from "../base/Table";
-import { FilterPopup } from "../base/filterPopup"; // Import the FilterPopup component
+import { FilterPopup } from "../base/filterPopup";
 import { api } from "~/trpc/react";
 
 type CurrTableProps = {
@@ -35,9 +35,15 @@ type CurrTableProps = {
 
 type FilterCondition = {
   id: string
-  field: string
-  operator: string
+  columnId: string
+  operator: "is" | "is not" | "contains" | "does not contain" | "is empty" | "is not empty" | "=" | "!=" | ">" | "<"
   value: string
+}
+
+type Column = {
+  id: string
+  name: string
+  type: string
 }
 
 export function CurrTable({ tableId }: CurrTableProps) {
@@ -46,11 +52,13 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const [viewsOpen, setViewsOpen] = useState(true);
   const utils = api.useUtils();
   
+  const columnList = api.column.getByTable.useQuery({ tableId: tableId! }, {
+    enabled: !!tableId,
+  });
+
   const deleteAllMutation = api.utils.deleteAllRowsAndCellsByTable.useMutation({
     onSuccess: async () => {
-      // Reset the infinite query completely
       await utils.row.getByTable.reset({ tableId: tableId! });
-      // Or use invalidate with the exact same parameters as the query
       await utils.row.getByTable.invalidate({ 
         tableId: tableId!, 
         limit: 50 
@@ -61,7 +69,6 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const generateTableMutation = api.utils.generateLargeTable.useMutation({
     onSuccess: async () => {
       await utils.row.getByTable.reset({ tableId: tableId! });
-      // Or invalidate with exact parameters
       await utils.row.getByTable.invalidate({ 
         tableId: tableId!, 
         limit: 50 
@@ -69,7 +76,6 @@ export function CurrTable({ tableId }: CurrTableProps) {
     },
   });
 
-  // Check if any mutation is loading or if tableId is null/undefined
   const isLoading = deleteAllMutation.isPending || generateTableMutation.isPending;
   const isDisabled = isLoading || !tableId;
 
@@ -86,17 +92,13 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const handleApplyFilters = (filters: FilterCondition[]) => {
     setActiveFilters(filters)
     console.log("Applied filters:", filters)
-    // Here you would typically pass the filters to your TableView component
-    // or use them to filter your data query
   }
 
   const handleCloseFilter = () => {
     setIsFilterOpen(false)
   }
 
-  // Example fields - you might want to get these from your table schema
   const columns = api.column.getByTable.useQuery({ tableId: tableId ?? "" });
-  console.log(columns.data)
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -168,10 +170,8 @@ export function CurrTable({ tableId }: CurrTableProps) {
 
               <FilterPopup
                 isOpen={isFilterOpen}
-                onClose={() => setIsFilterOpen(false)}
-                onApply={(filters) => {
-                  console.log("Applied Filters:", filters)
-                }}
+                onClose={handleCloseFilter}
+                onApply={handleApplyFilters}
                 columns={columns.data ?? []}
               />
             </div>
@@ -347,7 +347,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
               </div>
             </div>
           ) : tableId ? (
-            <TableView tableId={tableId} />
+            <TableView tableId={tableId} filters={activeFilters} />
           ) : (
             <div className="flex items-center justify-center h-full p-8 text-gray-500">
               <div className="text-center">
