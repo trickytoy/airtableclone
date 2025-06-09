@@ -24,41 +24,40 @@ It focuses on performance and usability, supporting very large tables with virtu
 ## Feature Checklist
 
 ### Authentication & Base/Table Management
-- ✅ Google Sign-In authentication
-- ✅ Users can create multiple **bases**
-- ✅ Each base can have multiple **tables**
-- [ ] New tables start with default columns and rows (using Faker.js)
+- [x] Google Sign-In authentication
+- [x] Users can create multiple **bases**
+- [x] Each base can have multiple **tables**
 
 ### Table UI & Editing
-- ✅ Airtable-inspired table UI using TanStack Table
-- [ ] Editable column headers (names and types: TEXT, NUMBER)
-- ✅ Dynamically add new columns (TEXT and NUMBER)
-- ✅ Inline editable cells
-- [ ] Smooth tab navigation across cells
-- [ ] Default rows and columns generated on table creation
+- [x] Airtable-inspired table UI using TanStack Table
+- [] Editable column headers (names and types: TEXT, NUMBER)
+- [x] Dynamically add new columns (TEXT and NUMBER)
+- [x] Inline editable cells
+- [x] Smooth tab navigation across cells
+- [] Default rows and columns generated on table creation
 
 ### Performance & Virtualization
 - [x] Use TanStack virtualizer for row virtualization
-- [ ] Implement cursor-based pagination via tRPC
-- [ ] Button to add 100,000 Faker-generated rows dynamically
-- [ ] Smooth scrolling and rendering with 100k+ rows
-- [ ] Scalable to 1 million rows without lag
+- [x] Implement cursor-based pagination via tRPC
+- [x] Button to add 100,000 Faker-generated rows dynamically
+- [x] Smooth scrolling and rendering with 100k+ rows
+- [x] Scalable to 1 million rows without lag
 
 ### Search, Filter, and Sort (Database-side)
-- [ ] Global search across all cells
-- [ ] Column filters:
+- [] Global search across all cells
+- [x] Column filters:
   - Text: contains, not contains, is empty, is not empty, equals
   - Number: greater than, less than, equals
-- [ ] Sorting:
+- [x] Sorting:
   - Text: A→Z, Z→A
   - Number: ascending, descending
-- [ ] Save and load views with filters, sorting, and column visibility
-- [ ] Ability to hide/show columns dynamically
+- [] Save and load views with filters, sorting, and column visibility
+- [] Ability to hide/show columns dynamically
 
 ### UX & Loading States
-- [ ] Loading placeholders/spinners during data fetching
-- [ ] Disabled inputs/buttons while saving/loading data
-- [ ] Keyboard friendly navigation and editing
+- [x] Loading placeholders/spinners during data fetching
+- [x] Disabled inputs/buttons while saving/loading data
+- [x] Keyboard friendly navigation and editing
 
 ---
 

@@ -29,118 +29,114 @@ export const rowRouter = createTRPCRouter({
             z.object({
               columnId: z.string(),
               operator: z.enum([
-                "is",
-                "is not", 
-                "contains",
-                "does not contain",
-                "is empty",
-                "is not empty",
-                "=",
-                "!=",
-                ">",
-                "<"
+                "is", "is not", "contains", "does not contain",
+                "is empty", "is not empty", "=", "!=", ">", "<",
               ]),
               value: z.string().optional(),
             })
           )
           .optional(),
+        sorts: z
+          .array(
+            z.object({
+              id: z.string(),
+              columnId: z.string(),
+              direction: z.enum(["asc", "desc"]),
+            })
+          )
+          .optional(),
       })
     )
-    .query(async ({ input: { tableId, limit, cursor, filters }, ctx }) => {
-      // Build Prisma where clause for cellValues filtering
+    .query(async ({ input: { tableId, limit, cursor, filters, sorts }, ctx }) => {
       const cellValuesConditions: Array<{ some: any }> = [];
-      
+
+      // FILTERING
       if (filters && filters.length > 0) {
-        const filterConditions = filters.map((filter) => {
-          const { columnId, operator, value } = filter;
+        const filterConditions = filters
+          .map(({ columnId, operator, value }) => {
+            const createTextCondition = (condition: any) => ({
+              columnId,
+              textValue: condition,
+            });
 
-          // Create conditions for both text and number values
-          const createTextCondition = (condition: any) => ({
-            columnId,
-            textValue: condition,
-          });
+            const createNumberCondition = (condition: any) => ({
+              columnId,
+              numberValue: condition,
+            });
 
-          const createNumberCondition = (condition: any) => ({
-            columnId,
-            numberValue: condition,
-          });
-
-          switch (operator) {
-            case "is":
-            case "=":
-              return {
-                columnId,
-                OR: [
-                  { textValue: value ?? "" },
-                  { numberValue: value ? parseFloat(value) : null },
-                ],
-              };
-            case "is not":
-            case "!=":
-              return {
-                columnId,
-                NOT: {
+            switch (operator) {
+              case "is":
+              case "=":
+                return {
+                  columnId,
                   OR: [
                     { textValue: value ?? "" },
                     { numberValue: value ? parseFloat(value) : null },
                   ],
-                },
-              };
-            case "contains":
-              return createTextCondition({
-                contains: value ?? "",
-                mode: "insensitive" as const,
-              });
-            case "does not contain":
-              return {
-                columnId,
-                NOT: {
-                  textValue: {
-                    contains: value ?? "",
-                    mode: "insensitive" as const,
+                };
+              case "is not":
+              case "!=":
+                return {
+                  columnId,
+                  NOT: {
+                    OR: [
+                      { textValue: value ?? "" },
+                      { numberValue: value ? parseFloat(value) : null },
+                    ],
                   },
-                },
-              };
-            case "is empty":
-              return {
-                columnId,
-                OR: [
-                  { textValue: null },
-                  { textValue: "" },
-                  { numberValue: null },
-                ],
-              };
-            case "is not empty":
-              return {
-                columnId,
-                NOT: {
+                };
+              case "contains":
+                return createTextCondition({
+                  contains: value ?? "",
+                  mode: "insensitive" as const,
+                });
+              case "does not contain":
+                return {
+                  columnId,
+                  NOT: {
+                    textValue: {
+                      contains: value ?? "",
+                      mode: "insensitive" as const,
+                    },
+                  },
+                };
+              case "is empty":
+                return {
+                  columnId,
                   OR: [
                     { textValue: null },
                     { textValue: "" },
                     { numberValue: null },
                   ],
-                },
-              };
-            case ">":
-              return createNumberCondition({
-                gt: value ? parseFloat(value) : 0,
-              });
-            case "<":
-              return createNumberCondition({
-                lt: value ? parseFloat(value) : 0,
-              });
-            default:
-              return null;
-          }
-        }).filter((condition): condition is NonNullable<typeof condition> => condition !== null);
+                };
+              case "is not empty":
+                return {
+                  columnId,
+                  NOT: {
+                    OR: [
+                      { textValue: null },
+                      { textValue: "" },
+                      { numberValue: null },
+                    ],
+                  },
+                };
+              case ">":
+                return createNumberCondition({
+                  gt: value ? parseFloat(value) : 0,
+                });
+              case "<":
+                return createNumberCondition({
+                  lt: value ? parseFloat(value) : 0,
+                });
+              default:
+                return null;
+            }
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
 
         if (filterConditions.length > 0) {
-          // For AND logic across multiple columns, we need to ensure
-          // the row has cellValues that match ALL filter conditions
           cellValuesConditions.push(
-            ...filterConditions.map(condition => ({
-              some: condition
-            }))
+            ...filterConditions.map((c) => ({ some: c }))
           );
         }
       }
@@ -148,12 +144,78 @@ export const rowRouter = createTRPCRouter({
       const whereClause = {
         tableId,
         ...(cellValuesConditions.length > 0 && {
-          AND: cellValuesConditions.map(condition => ({
-            cellValues: condition
-          }))
+          AND: cellValuesConditions.map((c) => ({
+            cellValues: c,
+          })),
         }),
       };
 
+      // SORTING
+      if (sorts && sorts.length > 0) {
+        // For multiple sorts, we need to fetch all matching rows and sort in memory
+        // since Prisma doesn't support complex sorting across relations easily
+        
+        const allRows = await ctx.db.row.findMany({
+          where: whereClause,
+          include: {
+            cellValues: true,
+          },
+        });
+
+        // Sort rows based on multiple sort criteria
+        const sortedRows = allRows.sort((a, b) => {
+          for (const { columnId, direction } of sorts) {
+            const aCellValue = a.cellValues.find(cell => cell.columnId === columnId);
+            const bCellValue = b.cellValues.find(cell => cell.columnId === columnId);
+            
+            // Get the actual values for comparison
+            const aValue = aCellValue?.numberValue ?? aCellValue?.textValue ?? "";
+            const bValue = bCellValue?.numberValue ?? bCellValue?.textValue ?? "";
+            
+            let comparison = 0;
+            
+            // Handle different value types
+            if (typeof aValue === 'number' && typeof bValue === 'number') {
+              comparison = aValue - bValue;
+            } else {
+              // Convert to string for comparison
+              const aStr = String(aValue).toLowerCase();
+              const bStr = String(bValue).toLowerCase();
+              comparison = aStr.localeCompare(bStr);
+            }
+            
+            if (comparison !== 0) {
+              return direction === 'desc' ? -comparison : comparison;
+            }
+          }
+          return 0;
+        });
+
+        // Apply pagination
+        const startIndex = cursor ? sortedRows.findIndex(row => row.id === cursor) + 1 : 0;
+        const endIndex = Math.min(startIndex + limit, sortedRows.length);
+        const paginatedRows = sortedRows.slice(startIndex, startIndex + limit);
+        
+        let nextCursor: typeof cursor | undefined = undefined;
+        if (endIndex < sortedRows.length) {
+          nextCursor = paginatedRows[paginatedRows.length - 1]?.id;
+        }
+
+        const formattedRows = paginatedRows.map((row) => ({
+          id: row.id,
+          createdAt: row.createdAt,
+          cellValuesByColumnId: Object.fromEntries(
+            row.cellValues.map((cell) => [cell.columnId, cell])
+          ),
+        }));
+
+        return {
+          rows: formattedRows,
+          nextCursor,
+        };
+      }
+
+      // DEFAULT fetch (no sort)
       const rows = await ctx.db.row.findMany({
         where: whereClause,
         take: limit + 1,

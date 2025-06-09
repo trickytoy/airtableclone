@@ -23,6 +23,8 @@ type FilterPopupProps = {
   columns: Column[]
 }
 
+
+
 const textOperators: FilterCondition["operator"][] = ["contains", "does not contain", "is", "is not", "is empty", "is not empty"]
 const numberOperators: FilterCondition["operator"][] = ["=", "!=", ">", "<", "is empty", "is not empty"]
 

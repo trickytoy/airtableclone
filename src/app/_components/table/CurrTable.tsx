@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import TableView from "../base/Table";
 import { FilterPopup } from "../base/filterPopup";
+import { SortPopup } from "../base/sortPopup";
 import { api } from "~/trpc/react";
 
 type CurrTableProps = {
@@ -40,6 +41,12 @@ type FilterCondition = {
   value: string
 }
 
+type SortCriteria = {
+  id: string
+  columnId: string
+  direction: "asc" | "desc"
+}
+
 type Column = {
   id: string
   name: string
@@ -48,7 +55,9 @@ type Column = {
 
 export function CurrTable({ tableId }: CurrTableProps) {
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [isSortOpen, setIsSortOpen] = useState(false)
   const [activeFilters, setActiveFilters] = useState<FilterCondition[]>([])
+  const [activeSorts, setActiveSorts] = useState<SortCriteria[]>([])
   const [viewsOpen, setViewsOpen] = useState(true);
   const utils = api.useUtils();
   
@@ -96,6 +105,15 @@ export function CurrTable({ tableId }: CurrTableProps) {
 
   const handleCloseFilter = () => {
     setIsFilterOpen(false)
+  }
+
+  const handleApplySort = (sorts: SortCriteria[]) => {
+    setActiveSorts(sorts)
+    console.log("Applied sorts:", sorts)
+  }
+
+  const handleCloseSort = () => {
+    setIsSortOpen(false)
   }
 
   const columns = api.column.getByTable.useQuery({ tableId: tableId ?? "" });
@@ -176,29 +194,34 @@ export function CurrTable({ tableId }: CurrTableProps) {
               />
             </div>
 
-            <button 
-              className={`flex items-center space-x-1 text-sm ${
-                isDisabled 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-              disabled={isDisabled}
-            >
-              <Group className="w-4 h-4" />
-              <span>Group</span>
-            </button>
+            <div className="relative">
+              <button 
+                className={`flex items-center space-x-1 text-sm ${
+                  isDisabled 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : activeFilters.length > 0
+                    ? 'text-blue-600 hover:text-blue-700'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => !isDisabled && setIsSortOpen(!isSortOpen)}
+                disabled={isDisabled}
+              >
+                <ArrowUpDown className="w-4 h-4" />
+                <span>Sort</span>
+                {activeFilters.length > 0 && (
+                  <span className="bg-blue-100 text-blue-600 text-xs px-1.5 py-0.5 rounded-full">
+                    {activeFilters.length}
+                  </span>
+                )}
+              </button>
 
-            <button 
-              className={`flex items-center space-x-1 text-sm ${
-                isDisabled 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-              disabled={isDisabled}
-            >
-              <ArrowUpDown className="w-4 h-4" />
-              <span>Sort</span>
-            </button>
+              <SortPopup
+                isOpen={isSortOpen}
+                onClose={handleCloseSort}
+                onApply={handleApplySort}
+                columns={columns.data ?? []}
+              />
+            </div>
 
             <button 
               className={`flex items-center space-x-1 text-sm ${
@@ -347,7 +370,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
               </div>
             </div>
           ) : tableId ? (
-            <TableView tableId={tableId} filters={activeFilters} />
+            <TableView tableId={tableId} filters={activeFilters} sorts={activeSorts} />
           ) : (
             <div className="flex items-center justify-center h-full p-8 text-gray-500">
               <div className="text-center">

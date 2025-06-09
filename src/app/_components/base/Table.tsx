@@ -47,14 +47,23 @@ type FilterCondition = {
   value: string
 }
 
+type SortCriteria = {
+  id: string
+  columnId: string
+  direction: "asc" | "desc"
+}
+
+
 type TableViewProps = {
   tableId?: string | null
   filters?: FilterCondition[]
+  sorts?: SortCriteria[]
 }
 
 
 
-export default function TableView({ tableId, filters = [] }: TableViewProps) {
+
+export default function TableView({ tableId, filters = [], sorts = [] }: TableViewProps) {
   const [newColumnName, setNewColumnName] = useState("")
   const [newColumnType, setNewColumnType] = useState<"TEXT" | "NUMBER">("TEXT")
   const [isAddColumnDialogOpen, setIsAddColumnDialogOpen] = useState(false)
@@ -93,7 +102,8 @@ export default function TableView({ tableId, filters = [] }: TableViewProps) {
     {
       tableId: tableId ?? "",
       limit: 50,
-      filters: transformedFilters
+      filters: transformedFilters,
+      sorts: sorts
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
