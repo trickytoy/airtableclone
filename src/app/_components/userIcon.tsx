@@ -22,7 +22,7 @@ export default function UserMenu() {
     <div className="relative">
       <button
         onClick={toggleMenu}
-        className="flex items-center gap-2 rounded-full p-0.5 hover:bg-gray-100"
+        className="flex items-center gap-2 rounded-full p-0.5 bg-gray-100 hover:bg-gray-400"
         aria-haspopup="true"
         aria-expanded={menuOpen}
       >

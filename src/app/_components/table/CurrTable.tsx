@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ChevronDown,
   Plus,
   Eye,
   EyeOff,
   Filter,
-  Group,
   ArrowUpDown,
   Palette,
   Search,
@@ -16,11 +15,6 @@ import {
   Calendar,
   ImageIcon,
   Trello,
-  Timer,
-  List,
-  GanttChart,
-  PlusSquare,
-  FileText,
   Check,
   CirclePlus,
   Loader2,
@@ -28,6 +22,8 @@ import {
 import TableView from "../base/Table";
 import { FilterPopup } from "../base/filterPopup";
 import { SortPopup } from "../base/sortPopup";
+import { HideFieldsPopup } from "../base/HideFieldsPopup";
+import { ViewPopup } from "../base/ViewPopup";
 import { api } from "~/trpc/react";
 
 type CurrTableProps = {
@@ -35,93 +31,207 @@ type CurrTableProps = {
 };
 
 type FilterCondition = {
-  id: string
-  columnId: string
-  operator: "is" | "is not" | "contains" | "does not contain" | "is empty" | "is not empty" | "=" | "!=" | ">" | "<"
-  value: string
-}
+  id: string;
+  columnId: string;
+  operator: "is" | "is not" | "contains" | "does not contain" | "is empty" | "is not empty" | "=" | "!=" | ">" | "<";
+  value: string;
+};
 
 type SortCriteria = {
-  id: string
-  columnId: string
-  direction: "asc" | "desc"
-}
+  id: string;
+  columnId: string;
+  direction: "asc" | "desc";
+};
 
-type Column = {
-  id: string
-  name: string
-  type: string
-}
+
+type ViewData = {
+  filters: FilterCondition[];
+  sortCriteria: SortCriteria[];
+  hiddenColumns: string[];
+};
+
+type View = {
+  id: string;
+  viewName: string;
+  viewData: ViewData;
+};
 
 export function CurrTable({ tableId }: CurrTableProps) {
-  const [isFilterOpen, setIsFilterOpen] = useState(false)
-  const [isSortOpen, setIsSortOpen] = useState(false)
-  const [activeFilters, setActiveFilters] = useState<FilterCondition[]>([])
-  const [activeSorts, setActiveSorts] = useState<SortCriteria[]>([])
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isHideFieldsOpen, setIsHideFieldsOpen] = useState(false);
+  const [activeFilters, setActiveFilters] = useState<FilterCondition[]>([]);
+  const [activeSorts, setActiveSorts] = useState<SortCriteria[]>([]);
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
   const [viewsOpen, setViewsOpen] = useState(true);
+  const [isViewPopupOpen, setIsViewPopupOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [views, setViews] = useState<View[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+
   const utils = api.useUtils();
-  
-  const columnList = api.column.getByTable.useQuery({ tableId: tableId! }, {
-    enabled: !!tableId,
-  });
+
+  if (tableId) {
+    localStorage.setItem("table", tableId ? tableId : "")
+  }
+
+  // Fetch existing views when tableId changes
+  const viewsQuery = api.views.getAllForTable.useQuery(
+    tableId!,
+    { enabled: !!tableId }
+  );
+
+  // Update views state when query data changes
+  useEffect(() => {
+    if (viewsQuery.data) {
+      const convertedViews: View[] = viewsQuery.data.map((view) => ({
+        id: view.id,
+        viewName: view.viewName,
+        viewData: view.viewData as ViewData,
+      }));
+      setViews(convertedViews);
+    }
+  }, [viewsQuery.data]);
 
   const deleteAllMutation = api.utils.deleteAllRowsAndCellsByTable.useMutation({
     onSuccess: async () => {
-      await utils.row.getByTable.reset({ tableId: tableId! });
+      if (!tableId) return;
+      await utils.row.getByTable.reset({ tableId });
       await utils.row.getByTable.invalidate({ 
-        tableId: tableId!, 
+        tableId, 
         limit: 50 
       });
+    },
+    onError: (error) => {
+      console.error('Failed to delete all rows:', error);
+      // Optionally show error to user
     },
   });
 
   const generateTableMutation = api.utils.generateLargeTable.useMutation({
     onSuccess: async () => {
-      await utils.row.getByTable.reset({ tableId: tableId! });
+      if (!tableId) return;
+      await utils.row.getByTable.reset({ tableId });
       await utils.row.getByTable.invalidate({ 
-        tableId: tableId!, 
+        tableId, 
         limit: 50 
       });
     },
+    onError: (error) => {
+      console.error('Failed to generate table:', error);
+      // Optionally show error to user
+    },
   });
+
+  const createViewMutation = api.views.create.useMutation({
+    onSuccess: async (newView) => {
+      // Convert the database response to match your View type
+      const convertedView: View = {
+        id: newView.id,
+        viewName: newView.viewName,
+        viewData: newView.viewData as ViewData,
+      };
+      
+      setViews(prev => [...prev, convertedView]);
+      
+      // Optionally invalidate the views query to keep data in sync
+      if (tableId) {
+        await utils.views.getAllForTable.invalidate(tableId);
+      }
+    },
+    onError: (error) => {
+      console.error('Failed to create view:', error);
+      // Optionally show error message to the user
+    },
+  });
+
+  const addView = async (viewName: string) => {
+    if (!tableId || !viewName.trim()) return;
+    
+    try {
+      await createViewMutation.mutateAsync({
+        tableId: tableId,
+        viewName: viewName.trim(),
+        filters: activeFilters,
+        sortCriteria: activeSorts,
+        hiddenColumns: hiddenColumns,
+      });
+      // Close the popup on success
+      setIsViewPopupOpen(false);
+    } catch (error) {
+      console.error('Failed to create view:', error);
+      // Error is already handled in the mutation's onError
+    }
+  };
+
+  const applyView = (view: View) => {
+    setActiveFilters(view.viewData.filters);
+    setActiveSorts(view.viewData.sortCriteria);
+    setHiddenColumns(view.viewData.hiddenColumns);
+    setActiveViewId(view.id);
+  };
 
   const isLoading = deleteAllMutation.isPending || generateTableMutation.isPending;
   const isDisabled = isLoading || !tableId;
 
   const add100K = async () => {
     if (!tableId) return;
-    await generateTableMutation.mutateAsync({ tableId: tableId, count: 100 });
+    try {
+      await generateTableMutation.mutateAsync({ tableId, count: 500 });
+    } catch (error) {
+      // Error is handled in the mutation's onError
+    }
   };
 
   const deleteAll = async () => {
     if (!tableId) return;
-    await deleteAllMutation.mutateAsync({ tableId: tableId });
-  }
+    try {
+      await deleteAllMutation.mutateAsync({ tableId });
+    } catch (error) {
+      // Error is handled in the mutation's onError
+      console.log("delete all error")
+    }
+  };
 
   const handleApplyFilters = (filters: FilterCondition[]) => {
-    setActiveFilters(filters)
-    console.log("Applied filters:", filters)
-  }
+    setActiveFilters(filters);
+    setActiveViewId(null); // Clear active view when manually applying filters
+    console.log("Applied filters:", filters);
+  };
 
   const handleCloseFilter = () => {
-    setIsFilterOpen(false)
-  }
+    setIsFilterOpen(false);
+  };
 
   const handleApplySort = (sorts: SortCriteria[]) => {
-    setActiveSorts(sorts)
-    console.log("Applied sorts:", sorts)
-  }
+    setActiveSorts(sorts);
+    setActiveViewId(null); // Clear active view when manually applying sorts
+    console.log("Applied sorts:", sorts);
+  };
 
   const handleCloseSort = () => {
-    setIsSortOpen(false)
-  }
+    setIsSortOpen(false);
+  };
 
-  const columns = api.column.getByTable.useQuery({ tableId: tableId ?? "" });
+  const handleApplyHideFields = (hiddenColumnIds: string[]) => {
+    setHiddenColumns(hiddenColumnIds);
+    setActiveViewId(null); // Clear active view when manually hiding fields
+    console.log("Hidden columns:", hiddenColumnIds);
+  };
+
+  const handleCloseHideFields = () => {
+    setIsHideFieldsOpen(false);
+  };
+
+  const columns = api.column.getByTable.useQuery(
+    { tableId: tableId ?? "" },
+    { enabled: !!tableId }
+  );
 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Top Toolbar */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
+      <div className="bg-white border-b border-gray-200 px-4 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
@@ -138,31 +248,59 @@ export function CurrTable({ tableId }: CurrTableProps) {
             </button>
 
             <div className="h-4 w-px bg-gray-300"></div>
+            
+            <div className="relative">
+              <button 
+                className={`flex items-center space-x-1 text-sm ${
+                  isDisabled 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => !isDisabled && setIsViewPopupOpen(true)}
+                disabled={isDisabled}
+              >
+                <Grid3X3 className="w-4 h-4" />
+                <span>Add view</span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
 
-            <button 
-              className={`flex items-center space-x-1 text-sm ${
-                isDisabled 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-              disabled={isDisabled}
-            >
-              <Grid3X3 className="w-4 h-4" />
-              <span>Grid view</span>
-              <ChevronDown className="w-4 h-4" />
-            </button>
+              <ViewPopup
+                isOpen={isViewPopupOpen}
+                onClose={() => setIsViewPopupOpen(false)}
+                onAdd={addView}
+              />
+            </div>
 
-            <button 
-              className={`flex items-center space-x-1 text-sm ${
-                isDisabled 
-                  ? 'text-gray-400 cursor-not-allowed' 
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-              disabled={isDisabled}
-            >
-              <EyeOff className="w-4 h-4" />
-              <span>Hide fields</span>
-            </button>
+            {/* Hide Fields Button with Popup */}
+            <div className="relative">
+              <button 
+                className={`flex items-center space-x-1 text-sm ${
+                  isDisabled 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : hiddenColumns.length > 0
+                    ? 'text-blue-600 hover:text-blue-700'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => !isDisabled && setIsHideFieldsOpen(!isHideFieldsOpen)}
+                disabled={isDisabled}
+              >
+                <EyeOff className="w-4 h-4" />
+                <span>Hide fields</span>
+                {hiddenColumns.length > 0 && (
+                  <span className="bg-blue-100 text-blue-600 text-xs px-1.5 py-0.5 rounded-full">
+                    {hiddenColumns.length}
+                  </span>
+                )}
+              </button>
+
+              <HideFieldsPopup
+                isOpen={isHideFieldsOpen}
+                onClose={handleCloseHideFields}
+                onApply={handleApplyHideFields}
+                columns={columns.data ?? []}
+                initialHiddenColumns={hiddenColumns}
+              />
+            </div>
 
             {/* Filter Button with Popup */}
             <div className="relative">
@@ -194,12 +332,13 @@ export function CurrTable({ tableId }: CurrTableProps) {
               />
             </div>
 
+            {/* Sort Button with Popup */}
             <div className="relative">
               <button 
                 className={`flex items-center space-x-1 text-sm ${
                   isDisabled 
                     ? 'text-gray-400 cursor-not-allowed' 
-                    : activeFilters.length > 0
+                    : activeSorts.length > 0
                     ? 'text-blue-600 hover:text-blue-700'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
@@ -208,9 +347,9 @@ export function CurrTable({ tableId }: CurrTableProps) {
               >
                 <ArrowUpDown className="w-4 h-4" />
                 <span>Sort</span>
-                {activeFilters.length > 0 && (
+                {activeSorts.length > 0 && (
                   <span className="bg-blue-100 text-blue-600 text-xs px-1.5 py-0.5 rounded-full">
-                    {activeFilters.length}
+                    {activeSorts.length}
                   </span>
                 )}
               </button>
@@ -257,6 +396,31 @@ export function CurrTable({ tableId }: CurrTableProps) {
               <span>Add 100K Rows</span>
             </button>
           </div>
+
+          <div
+            className={`relative w-full max-w-sm ${
+              isDisabled ? 'cursor-not-allowed' : ''
+            }`}
+          >
+            <Search
+              className={`absolute left-3 top-1/2 -translate-y-1/2 ${
+                isDisabled ? 'text-gray-300' : 'text-gray-400'
+              }`}
+              size={16}
+            />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              disabled={isDisabled}
+              className={`pl-9 pr-3 py-1.5 text-sm rounded-md w-full transition-colors
+                ${isDisabled
+                  ? 'bg-gray-100 border border-gray-200 text-gray-400 placeholder:text-gray-300'
+                  : 'border border-gray-300 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400 hover:border-gray-400'}
+              `}
+            />
+          </div>
         </div>
       </div>
 
@@ -292,17 +456,37 @@ export function CurrTable({ tableId }: CurrTableProps) {
 
             {/* Views */}
             <div className="flex-1 overflow-y-auto p-1">
-              <div className={`flex items-center justify-between px-2 py-2 rounded group ${
-                isDisabled 
-                  ? 'bg-gray-100 text-gray-400' 
-                  : 'bg-blue-50 text-blue-600'
-              }`}>
-                <div className="flex items-center">
-                  <Grid3X3 className="w-4 h-4 mr-2" />
-                  <span className="text-sm">Grid view</span>
+              {viewsQuery.isLoading ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                 </div>
-                <Check className="w-4 h-4" />
-              </div>
+              ) : views.length === 0 ? (
+                <div className="p-4 text-center text-gray-500 text-sm">
+                  No views yet
+                </div>
+              ) : (
+                views.map((view) => (
+                  <div
+                    key={view.id}
+                    className={`flex items-center justify-between px-2 py-2 rounded group mb-1 cursor-pointer ${
+                      isDisabled
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : activeViewId === view.id
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'hover:bg-gray-100 text-gray-700'
+                    }`}
+                    onClick={() => !isDisabled && applyView(view)}
+                  >
+                    <div className="flex items-center">
+                      <Grid3X3 className="w-4 h-4 mr-2" />
+                      <span className="text-sm">{view.viewName}</span>
+                    </div>
+                    {activeViewId === view.id && (
+                      <Check className="w-4 h-4 text-blue-600" />
+                    )}
+                  </div>
+                ))
+              )}
             </div>
 
             {/* Create Section */}
@@ -329,7 +513,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
                     className={`flex items-center justify-between px-2 py-1 rounded group ${
                       isDisabled 
                         ? 'cursor-not-allowed' 
-                        : 'hover:bg-gray-100'
+                        : 'hover:bg-gray-100 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center">
@@ -370,7 +554,13 @@ export function CurrTable({ tableId }: CurrTableProps) {
               </div>
             </div>
           ) : tableId ? (
-            <TableView tableId={tableId} filters={activeFilters} sorts={activeSorts} />
+            <TableView 
+              tableId={tableId} 
+              filters={activeFilters} 
+              sorts={activeSorts}
+              hiddenColumns={hiddenColumns}
+              search={searchTerm}
+            />
           ) : (
             <div className="flex items-center justify-center h-full p-8 text-gray-500">
               <div className="text-center">

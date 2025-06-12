@@ -97,6 +97,8 @@ model Table {
 
   columns   Column[]
   rows      Row[]
+
+  View View[]
 }
 
 
@@ -142,4 +144,16 @@ model CellValue {
 enum ColumnType {
   TEXT
   NUMBER
+}
+
+
+model View {
+  id        String   @id @default(cuid())
+  tableId   String   // Foreign key to the Table
+  viewName  String   // Name of the View
+  viewData  Json     // Combined filters, sortCriteria, and hiddenColumns
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  table     Table    @relation(fields: [tableId], references: [id], onDelete: Cascade)
 }

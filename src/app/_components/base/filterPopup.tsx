@@ -82,7 +82,7 @@ export function FilterPopup({ isOpen, onClose, onApply, columns }: FilterPopupPr
     setFilters(filters.filter((filter) => filter.id !== id))
   }
 
-  const updateFilter = (id: string, key: keyof FilterCondition, value: any) => {
+  const updateFilter = (id: string, key: keyof FilterCondition, value: string) => {
     setFilters(filters.map((filter) => (filter.id === id ? { ...filter, [key]: value } : filter)))
   }
 
@@ -244,7 +244,7 @@ export function FilterPopup({ isOpen, onClose, onApply, columns }: FilterPopupPr
             </div>
 
             {/* Add Filter Button */}
-            <div className="px-4 md:px-3 pb-3">
+            <div className="px-4 py-3 md:px-3 pb-3">
               <button
                 onClick={addFilter}
                 disabled={columns.length === 0}

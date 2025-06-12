@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { api } from "~/trpc/react"
 import { Plus, X } from "lucide-react"
@@ -27,6 +27,17 @@ export default function BasePage() {
   const [showModal, setShowModal] = useState(false)
   const [newTableName, setNewTableName] = useState("")
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
+    
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // safe to use localStorage
+      const savedTableId = localStorage.getItem("table")
+      if (savedTableId) {
+        setSelectedTableId(savedTableId)
+      }
+    }
+  }, [])
 
   const handleCreateTable = async () => {
     if (!newTableName.trim()) return
@@ -107,13 +118,13 @@ export default function BasePage() {
         <>
           {/* Overlay with blur */}
           <div
-            className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-40"
+            className="fixed inset-0  backdrop-blur-sm z-40"
             onClick={() => setShowModal(false)}
           />
 
           {/* Centered popup */}
           <div className="fixed inset-0 flex items-center justify-center z-50">
-            <div className="bg-white rounded-md p-6 w-80 shadow-lg relative">
+            <div className="bg-white rounded-md p-6 w-80 relative">
               <button
                 onClick={() => setShowModal(false)}
                 className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"

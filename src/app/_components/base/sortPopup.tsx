@@ -78,7 +78,7 @@ export function SortPopup({ isOpen, onClose, onApply, columns }: SortPopupProps)
     setSorts(sorts.filter((sort) => sort.id !== id))
   }
 
-  const updateSort = (id: string, key: keyof SortCriteria, value: any) => {
+  const updateSort = (id: string, key: keyof SortCriteria, value: string) => {
     setSorts(sorts.map((sort) => (sort.id === id ? { ...sort, [key]: value } : sort)))
   }
 
