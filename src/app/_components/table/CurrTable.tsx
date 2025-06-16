@@ -19,12 +19,13 @@ import {
   CirclePlus,
   Loader2,
 } from "lucide-react";
-import TableView from "../base/Table";
+//import TableView from "../base/Table";
 import { FilterPopup } from "../base/filterPopup";
 import { SortPopup } from "../base/sortPopup";
 import { HideFieldsPopup } from "../base/HideFieldsPopup";
 import { ViewPopup } from "../base/ViewPopup";
 import { api } from "~/trpc/react";
+import TableView from "../base/Table";
 
 type CurrTableProps = {
   tableId?: string | null;
@@ -71,10 +72,6 @@ export function CurrTable({ tableId }: CurrTableProps) {
 
   const utils = api.useUtils();
 
-  if (tableId) {
-    localStorage.setItem("table", tableId ? tableId : "")
-  }
-
   // Fetch existing views when tableId changes
   const viewsQuery = api.views.getAllForTable.useQuery(
     tableId!,
@@ -96,10 +93,14 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const deleteAllMutation = api.utils.deleteAllRowsAndCellsByTable.useMutation({
     onSuccess: async () => {
       if (!tableId) return;
-      await utils.row.getByTable.reset({ tableId });
-      await utils.row.getByTable.invalidate({ 
+      await utils.row.getRows.reset({ tableId });
+      await utils.row.getRows.invalidate({ 
         tableId, 
         limit: 50 
+      });
+      await utils.row.count.reset({ tableId });
+      await utils.row.count.invalidate({ 
+        tableId, 
       });
     },
     onError: (error) => {
@@ -111,10 +112,14 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const generateTableMutation = api.utils.generateLargeTable.useMutation({
     onSuccess: async () => {
       if (!tableId) return;
-      await utils.row.getByTable.reset({ tableId });
-      await utils.row.getByTable.invalidate({ 
+      await utils.row.getRows.reset({ tableId });
+      await utils.row.getRows.invalidate({ 
         tableId, 
         limit: 50 
+      });
+      await utils.row.count.reset({ tableId });
+      await utils.row.count.invalidate({ 
+        tableId, 
       });
     },
     onError: (error) => {
@@ -174,10 +179,19 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const isLoading = deleteAllMutation.isPending || generateTableMutation.isPending;
   const isDisabled = isLoading || !tableId;
 
+  const columns = api.column.getByTable.useQuery(
+    { tableId: tableId ?? "" },
+    { enabled: !!tableId }
+  );
+
   const add100K = async () => {
     if (!tableId) return;
     try {
-      await generateTableMutation.mutateAsync({ tableId, count: 500 });
+      const simplified = columns?.data?.map(({ id, type }) => ({
+        Column_id: id,
+        Column_type: type,
+      })) || [];
+      await generateTableMutation.mutateAsync({ tableId, count: 500,  columns: simplified, });
     } catch (error) {
       // Error is handled in the mutation's onError
     }
@@ -223,10 +237,8 @@ export function CurrTable({ tableId }: CurrTableProps) {
     setIsHideFieldsOpen(false);
   };
 
-  const columns = api.column.getByTable.useQuery(
-    { tableId: tableId ?? "" },
-    { enabled: !!tableId }
-  );
+
+  console.log(columns.data)
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -542,7 +554,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
         )}
 
         {/* Table Content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-grow overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center h-full p-8">
               <div className="text-center">
@@ -555,11 +567,11 @@ export function CurrTable({ tableId }: CurrTableProps) {
             </div>
           ) : tableId ? (
             <TableView 
-              tableId={tableId} 
-              filters={activeFilters} 
-              sorts={activeSorts}
-              hiddenColumns={hiddenColumns}
-              search={searchTerm}
+               tableId={tableId} 
+               filters={activeFilters} 
+               sorts={activeSorts}
+               hiddenColumns={hiddenColumns}
+               search={searchTerm}
             />
           ) : (
             <div className="flex items-center justify-center h-full p-8 text-gray-500">

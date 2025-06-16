@@ -42,4 +42,33 @@ export const columnRouter = createTRPCRouter({
         orderBy: { position: "asc" },
       });
     }),
+  
+    createMultiple: protectedProcedure
+    .input(
+      z.array(
+        z.object({
+          name: z.string().min(1),
+          type: z.enum(["TEXT", "NUMBER"]),
+          position: z.number().int().min(0),
+          tableId: z.string().cuid(),
+        })
+      )
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Create all columns in a single transaction
+      const columns = await ctx.db.$transaction(
+        input.map((columnData) =>
+          ctx.db.column.create({
+            data: {
+              name: columnData.name,
+              type: columnData.type,
+              position: columnData.position,
+              tableId: columnData.tableId,
+            },
+          })
+        )
+      );
+
+      return columns;
+    }),
 });

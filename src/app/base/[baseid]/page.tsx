@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { api } from "~/trpc/react"
 import { Plus, X } from "lucide-react"
@@ -27,17 +27,6 @@ export default function BasePage() {
   const [showModal, setShowModal] = useState(false)
   const [newTableName, setNewTableName] = useState("")
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
-    
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      // safe to use localStorage
-      const savedTableId = localStorage.getItem("table")
-      if (savedTableId) {
-        setSelectedTableId(savedTableId)
-      }
-    }
-  }, [])
 
   const handleCreateTable = async () => {
     if (!newTableName.trim()) return

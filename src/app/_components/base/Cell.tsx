@@ -1,3 +1,4 @@
+// Cell.tsx (No changes needed, but included for completeness)
 import React, { useState, useCallback } from "react"
 
 interface EditableCellProps {
@@ -30,14 +31,24 @@ export const EditableCell = React.memo(function EditableCell({
   }, [])
 
   const saveEdit = useCallback(async () => {
+    // Only save if the value has actually changed
+    console.log("here")
+    console.log(editValue)
+    if (editValue === (val !== null && val !== undefined ? val.toString() : "")) {
+
+      setIsEditing(false);
+      return;
+    }
+
     try {
       await onSave(rowId, colId, editValue)
       setIsEditing(false)
       setEditValue("")
+
     } catch (error) {
       console.error("Failed to save cell edit", error)
     }
-  }, [rowId, colId, editValue, onSave])
+  }, [rowId, colId, editValue, onSave, val])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setEditValue(e.target.value)
@@ -70,11 +81,13 @@ export const EditableCell = React.memo(function EditableCell({
       onBlur={isEditing ? saveEdit : undefined}
       style={{
         width: "100%",
-        border: isEditing ? "1px solid #ccc" : "none",
+        border: "none",
         background: isEditing ? "white" : "transparent",
         padding: "4px",
         boxSizing: "border-box",
         cursor: isEditing ? "text" : "pointer",
+        textAlign: "center"
+         // Added outline for better UX
       }}
     />
   )

@@ -3,6 +3,8 @@ import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import { faker } from '@faker-js/faker';
 import { randomUUID } from 'crypto';
 
+
+
 export const utilsRouter = createTRPCRouter({
   deleteAllRowsAndCellsByTable: protectedProcedure
     .input(
@@ -20,7 +22,7 @@ export const utilsRouter = createTRPCRouter({
       });
 
       const rowIds = rows.map((row) => row.id);
-      const BATCH_SIZE = 30000;
+      const BATCH_SIZE = 32767;
 
       if (rowIds.length === 0) {
         return { deletedRows: 0, deletedCells: 0 };
@@ -29,7 +31,6 @@ export const utilsRouter = createTRPCRouter({
       let deletedCellsTotal = 0;
       let deletedRowsTotal = 0;
 
-      // Step 2: Delete cell values in batches
       for (let i = 0; i < rowIds.length; i += BATCH_SIZE) {
         const batch = rowIds.slice(i, i + BATCH_SIZE);
         const deleted = await ctx.db.cellValue.deleteMany({
@@ -38,7 +39,6 @@ export const utilsRouter = createTRPCRouter({
         deletedCellsTotal += deleted.count;
       }
 
-      // Step 3: Delete rows in batches
       for (let i = 0; i < rowIds.length; i += BATCH_SIZE) {
         const batch = rowIds.slice(i, i + BATCH_SIZE);
         const deleted = await ctx.db.row.deleteMany({
@@ -54,95 +54,105 @@ export const utilsRouter = createTRPCRouter({
     }),
 
   generateLargeTable: protectedProcedure
-    .input(z.object({ 
-      tableId: z.string(), 
-      count: z.number().min(1).max(100000),
-      batchSize: z.number().min(100).max(50000).optional().default(50000)
-    }))
+    .input(
+      z.object({
+        tableId: z.string(),
+        count: z.number().min(1).max(100000),
+        batchSize: z.number().default(50000),
+        columns: z.array(
+          z.object({
+            Column_id: z.string(),
+            Column_type: z.string()
+          })
+        )
+      })
+    )
     .mutation(async ({ ctx, input }) => {
-      const { tableId, count, batchSize } = input;
-
-      // Generate a unique batch ID for this operation
+      const { tableId, count, batchSize, columns } = input;
       const operationBatchId = randomUUID();
 
-      const columns = await ctx.db.column.findMany({
-        where: { tableId },
-        select: { id: true, type: true },
-      });
+      // Ensure extensions are enabled
+      await ctx.db.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS pgcrypto;`);
 
-      if (columns.length === 0) {
-        throw new Error("No columns found for this table");
-      }
+      // Single massive query that generates everything in PostgreSQL
+      const textColumns = columns.filter(col => col.Column_type === 'TEXT');
+      const numberColumns = columns.filter(col => col.Column_type === 'NUMBER');
 
-      let created = 0;
-      const batchIds: string[] = [];
-
-      while (created < count) {
-        const remainingCount = count - created;
-        const currentBatchSize = Math.min(batchSize, remainingCount);
-        
-        // Generate a unique batch ID for each batch
-        const currentBatchId = `${operationBatchId}-batch-${Math.floor(created / batchSize) + 1}`;
-        batchIds.push(currentBatchId);
-
-        // Create rows with batchId
-        const batchRows = Array.from({ length: currentBatchSize }).map(() => ({
-          tableId,
-          batchId: currentBatchId,
-        }));
-
-        await ctx.db.row.createMany({
-          data: batchRows,
-        });
-
-        // Fetch the newly created rows by batchId (more efficient than ordering by createdAt)
-        const newRows = await ctx.db.row.findMany({
-          where: {
-            tableId,
-            batchId: currentBatchId,
-          },
-          select: { id: true },
-        });
-
-        // Generate cell values with appropriate data types
-        const cellValuesData = newRows.flatMap((row) =>
-          columns.map((col) => {
-            const baseData = {
-              rowId: row.id,
-              columnId: col.id,
-              textValue: null as string | null,
-              numberValue: null as number | null,
-            };
-
-            // Generate appropriate data based on column type
-            if (col.type === 'TEXT') {
-              baseData.textValue = faker.person.firstName();
-            } else if (col.type === 'NUMBER') {
-              baseData.numberValue = faker.number.float({ min: 1, max: 1000, fractionDigits: 2 });
-            }
-
-            return baseData;
-          })
-        );
-
-        // Insert cell values in smaller chunks to avoid memory issues
-        const cellBatchSize = 5000;
-        for (let i = 0; i < cellValuesData.length; i += cellBatchSize) {
-          const cellBatch = cellValuesData.slice(i, i + cellBatchSize);
-          await ctx.db.cellValue.createMany({
-            data: cellBatch,
-          });
+      // Build the cell value generation SQL dynamically
+      const cellValueSelects = columns.map(column => {
+        if (column.Column_type === 'TEXT') {
+          return `
+          SELECT 
+            gen_random_uuid() as id,
+            r.id as "rowId",
+            '${column.Column_id}' as "columnId",
+            (ARRAY['John', 'Jane', 'Mike', 'Sarah', 'David', 'Lisa', 'Tom', 'Anna', 'Chris', 'Emma', 
+                  'James', 'Mary', 'Robert', 'Patricia', 'Michael', 'Jennifer', 'William', 'Linda',
+                  'Richard', 'Elizabeth', 'Joseph', 'Barbara', 'Thomas', 'Susan', 'Charles', 'Jessica',
+                  'Christopher', 'Karen', 'Daniel', 'Nancy', 'Matthew', 'Betty', 'Anthony', 'Helen',
+                  'Mark', 'Sandra', 'Donald', 'Donna', 'Steven', 'Carol', 'Paul', 'Ruth', 'Andrew', 'Sharon',
+                  'Joshua', 'Michelle', 'Kenneth', 'Laura', 'Kevin', 'Sarah', 'Brian', 'Kimberly', 'George', 'Deborah',
+                  'Timothy', 'Dorothy', 'Ronald', 'Lisa', 'Jason', 'Nancy', 'Edward', 'Karen', 'Jeffrey', 'Betty',
+                  'Ryan', 'Helen', 'Jacob', 'Sandra', 'Gary', 'Donna', 'Nicholas', 'Carol', 'Eric', 'Ruth',
+                  'Jonathan', 'Sharon', 'Stephen', 'Michelle', 'Larry', 'Laura', 'Justin', 'Sarah', 'Scott', 'Kimberly',
+                  'Brandon', 'Deborah', 'Benjamin', 'Dorothy', 'Samuel', 'Amy', 'Gregory', 'Angela', 'Alexander', 'Ashley',
+                  'Frank', 'Brenda', 'Raymond', 'Emma', 'Jack', 'Olivia', 'Dennis', 'Cynthia', 'Jerry', 'Marie'])[
+              1 + (abs(hashtext(r.id::text || '${column.Column_id}')) % 100)
+            ] as "textValue",
+            NULL::numeric as "numberValue",
+            NOW() as "createdAt",
+            NOW() as "updatedAt"
+          FROM rows_cte r`;
+        } else {
+          return `
+          SELECT 
+            gen_random_uuid() as id,
+            r.id as "rowId",
+            '${column.Column_id}' as "columnId",
+            NULL as "textValue",
+            (10 + (abs(hashtext(r.id::text || '${column.Column_id}')) % 90000)::numeric / 100) as "numberValue",
+            NOW() as "createdAt",
+            NOW() as "updatedAt"
+          FROM rows_cte r`;
         }
+      }).join(' UNION ALL ');
 
-        created += newRows.length;
-      }
+      const massiveQuery = `
+        WITH RECURSIVE 
+        generate_sequence AS (
+          SELECT 1 AS i
+          UNION ALL
+          SELECT i + 1 FROM generate_sequence WHERE i < ${count}
+        ),
+        rows_cte AS (
+          INSERT INTO "Row" (id, "tableId", "batchId", "createdAt")
+          SELECT 
+            gen_random_uuid() as id,
+            '${tableId}' as "tableId",
+            '${operationBatchId}-batch-' || CEIL(i::numeric / ${batchSize}) as "batchId",
+            NOW() as "createdAt"
+          FROM generate_sequence
+          RETURNING id
+        )
+        INSERT INTO "CellValue" (id, "rowId", "columnId", "textValue", "numberValue", "createdAt", "updatedAt")
+        ${cellValueSelects};
+      `;
 
-      return { 
-        success: true, 
-        rowsCreated: created,
+      // Execute the entire operation in one massive query
+      await ctx.db.$executeRawUnsafe(massiveQuery);
+
+      // Calculate batch information
+      const batchCount = Math.ceil(count / batchSize);
+      const batchIds = Array.from({ length: batchCount }, (_, i) =>
+        `${operationBatchId}-batch-${i + 1}`
+      );
+
+      return {
+        success: true,
+        rowsCreated: count,
         operationBatchId,
         batchIds,
-        batchCount: batchIds.length
+        batchCount,
       };
-    }),
+    })
 });
