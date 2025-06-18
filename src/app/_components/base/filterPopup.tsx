@@ -185,7 +185,7 @@ export function FilterPopup({ isOpen, onClose, onApply, columns }: FilterPopupPr
                   <select
                     value={filter.operator}
                     onChange={(e) => updateFilter(filter.id, "operator", e.target.value as FilterCondition["operator"])}
-                    className="px-2 py-1 text-sm border-t border-b border-gray-300  bg-white"
+                    className="px-2 py-1 text-sm border-t border-b border-r border-gray-300  bg-white"
                   >
                     {operators.map((op) => (
                       <option key={op} value={op}>
@@ -201,7 +201,7 @@ export function FilterPopup({ isOpen, onClose, onApply, columns }: FilterPopupPr
                       value={filter.value}
                       onChange={(e) => updateFilter(filter.id, "value", e.target.value)}
                       placeholder="Enter a value"
-                      className="flex-grow px-2 py-1 text-sm border border-gray-300 focus:border-transparent"
+                      className="flex-grow px-2 py-1 text-sm border-t border-b border-r border-gray-300 focus:border-transparent"
                     />
                   )}
 

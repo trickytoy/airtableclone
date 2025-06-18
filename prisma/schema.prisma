@@ -75,15 +75,18 @@ model VerificationToken {
 }
 
 model Base {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String   @id @default(cuid())
+  name              String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  lastOpenedTableId String?  // Add this field to store the last opened table ID
 
-  createdBy   User     @relation(fields: [createdById], references: [id])
-  createdById String
+  createdBy         User     @relation(fields: [createdById], references: [id])
+  createdById       String
 
-  tables    Table[]
+  tables            Table[]
+  
+  lastOpenedTable   Table?   @relation("BaseLastOpenedTable", fields: [lastOpenedTableId], references: [id])
 }
 
 model Table {
@@ -99,6 +102,8 @@ model Table {
   rows      Row[]
 
   View View[]
+
+  Base Base[] @relation("BaseLastOpenedTable")
 }
 
 

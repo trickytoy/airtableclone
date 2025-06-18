@@ -3,13 +3,14 @@
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from "@tanstack/react-table"
-import { Loader2, Edit, Check, X, PlusIcon } from "lucide-react"
+import { Loader2, Edit, Check, X, PlusIcon, Trash2 } from "lucide-react"
 import { api } from "~/trpc/react"
 import { EditableCell } from "./Cell" // Assuming EditableCell is in ./Cell
 import React from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { useQueryClient } from "@tanstack/react-query"
 import { faker } from '@faker-js/faker'
+import ColDropdown from "../column/ColDropdown"
 
 type Column = {
   id: string
@@ -51,8 +52,11 @@ type TableViewProps = {
   filters?: FilterCondition[]
   sorts?: SortCriteria[]
   hiddenColumns?: string[]
-  search?: string // Make search optional as per default in component
+  search?: string
 }
+
+type CheckedRow = { index: number; id: string };
+
 
 export default function TableView({
   tableId,
@@ -61,50 +65,86 @@ export default function TableView({
   hiddenColumns = [],
   search = ""
 }: TableViewProps) {
-  console.log(tableId)
   const queryClient = useQueryClient();
   const tableContainerRef = useRef<HTMLDivElement>(null)
-
+  // State for hovered row
+  const [hoveredRow, setHoveredRow] = useState<number | null>(null);
+  // State for checked rows
+  const [checkedRows, setCheckedRows] = useState<CheckedRow[]>([]);
   // State for columns, initialized from API call
   const [columnsState, setColumnsState] = useState<Column[]>([])
   const [isInitializingSampleData, setIsInitializingSampleData] = useState(false)
 
-  // ADD THIS: Local state for fast updates
+  // Local state for fast updates
   const [localFlatData, setLocalFlatData] = useState<Row[]>([]);
 
   // Track which column is being edited
   const [editingColumnId, setEditingColumnId] = useState<string | null>(null)
   const [editingColumnName, setEditingColumnName] = useState<string>("")
 
-  // ADD THIS: State for new column dialog
+  // State for new column dialog
   const [isAddColumnDialogOpen, setIsAddColumnDialogOpen] = useState(false)
   const [newColumnName, setNewColumnName] = useState("")
   const [newColumnType, setNewColumnType] = useState<"TEXT" | "NUMBER">("TEXT")
+
+  // State for edit column modal
+  const [isEditColumnModalOpen, setIsEditColumnModalOpen] = useState(false)
+  const [editColumnData, setEditColumnData] = useState<Column | null>(null)
+  const [editColumnName, setEditColumnName] = useState("")
+  const [editColumnType, setEditColumnType] = useState<"TEXT" | "NUMBER">("TEXT")
+
+  // State for delete column modal
+  const [isDeleteColumnModalOpen, setIsDeleteColumnModalOpen] = useState(false)
+  const [deleteColumnData, setDeleteColumnData] = useState<Column | null>(null)
 
   // TRPC Queries and Mutations
   const columnQuery = api.column.getByTable.useQuery({ tableId: tableId ?? "" });
   const upsertCellValue = api.cellValue.upsert.useMutation({});
   const editColumn = api.column.edit.useMutation({
     onSuccess: () => {
-      // Refetch columns after successful edit
       void columnQuery.refetch();
-      setEditingColumnId(null);
-      setEditingColumnName("");
+      setIsEditColumnModalOpen(false);
+      setEditColumnData(null);
+      setEditColumnName("");
+      setEditColumnType("TEXT");
+    },
+  });
+  
+  const deleteColumn = api.column.delete?.useMutation?.({
+    onSuccess: () => {
+      void columnQuery.refetch();
+      setIsDeleteColumnModalOpen(false);
+      setDeleteColumnData(null);
     },
   });
   
   const addColumnMutation = api.column.create.useMutation({
     onSuccess: () => {
-      // Refetch columns after successful add
       void columnQuery.refetch();
       setNewColumnName("");
       setNewColumnType("TEXT");
       setIsAddColumnDialogOpen(false);
     },
   });
+  
   const addRowMutation = api.row.create.useMutation()
 
-  // NEW: Batch mutations for initializing sample data
+  const deleteRow = api.row.delete.useMutation({
+    onSuccess: () => {
+      void refetch();
+      void countRefetch();
+    },
+  });
+
+  const deleteMultipleRows = api.row.deleteMultiple?.useMutation?.({
+    onSuccess: () => {
+      void refetch();
+      void countRefetch();
+      setCheckedRows([]); // Clear selection after successful delete
+    },
+  });
+
+  // Batch mutations for initializing sample data
   const createMultipleColumnsMutation = api.column.createMultiple?.useMutation?.({
     onSuccess: () => {
       void columnQuery.refetch();
@@ -113,7 +153,7 @@ export default function TableView({
   
   const createMultipleRowsMutation = api.row.createMultiple?.useMutation?.({
     onSuccess: () => {
-      void refetch(); // Add optional chaining here
+      void refetch();
       void countRefetch();
     },
   });
@@ -136,14 +176,14 @@ export default function TableView({
     },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      enabled: !!tableId && !!columnQuery.data, // Only enabled if tableId exists and columns are fetched
+      enabled: !!tableId && !!columnQuery.data,
     }
   );
 
   const { data: countData, refetch: countRefetch } = api.row.count.useQuery({ tableId: tableId ?? "" });
   const totalDBRowCount = countData?.total ?? 0;
 
-  // NEW: Function to generate sample columns with faker data
+  // Function to generate sample columns with faker data
   const generateSampleColumns = useCallback(() => {
     const sampleColumns = [
       { name: "Name", type: "TEXT" as const },
@@ -159,7 +199,7 @@ export default function TableView({
     }));
   }, [tableId]);
 
-  // NEW: Function to generate sample rows with faker data
+  // Function to generate sample rows with faker data
   const generateSampleRows = useCallback((columns: Column[], count = 5) => {
     const rows = [];
     
@@ -180,30 +220,25 @@ export default function TableView({
     return rows;
   }, [tableId]);
 
-  // NEW: Initialize sample data when no columns exist
+  // Initialize sample data when no columns exist
   const initializeSampleData = useCallback(async () => {
     if (!tableId || isInitializingSampleData) return;
     
     setIsInitializingSampleData(true);
     
     try {
-      // First, create sample columns
       const sampleColumnsData = generateSampleColumns();
       
-      // If we have batch mutations available, use them
       if (createMultipleColumnsMutation) {
         await createMultipleColumnsMutation.mutateAsync(sampleColumnsData);
       } else {
-        // Fallback to individual column creation
         for (const columnData of sampleColumnsData) {
           await addColumnMutation.mutateAsync(columnData);
         }
       }
       
-      // Wait a bit for columns to be created and refetched
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Get the newly created columns
       const { data: newColumns } = await columnQuery.refetch();
       
       if (newColumns && newColumns.length > 0) {
@@ -213,20 +248,16 @@ export default function TableView({
           type: col.type as "TEXT" | "NUMBER"
         }));
         
-        // Generate sample rows
         const sampleRowsData = generateSampleRows(mappedColumns, 5);
         
-        // Create sample rows
         if (createMultipleRowsMutation) {
           await createMultipleRowsMutation.mutateAsync(sampleRowsData);
         } else {
-          // Fallback to individual row creation
           for (const rowData of sampleRowsData) {
             const newRow = await addRowMutation.mutateAsync({
               tableId: tableId,
             });
             
-            // Create cell values for the new row
             for (const cellData of rowData.cellValues) {
               await upsertCellValue.mutateAsync({
                 rowId: newRow.id,
@@ -268,7 +299,7 @@ export default function TableView({
     }
   }, [columnQuery.data]);
 
-  // NEW: Check if we need to initialize sample data
+  // Check if we need to initialize sample data
   useEffect(() => {
     if (
       tableId && 
@@ -280,50 +311,59 @@ export default function TableView({
     }
   }, [tableId, columnQuery.data, isInitializingSampleData, initializeSampleData]);
 
-  // CHANGE THIS: Server data for syncing
+  // Server data for syncing
   const serverFlatData = useMemo(
     () => rowQuery?.pages.flatMap(page => page.formattedRows) ?? [],
     [rowQuery?.pages]
   );
 
-  // ADD THIS: Sync server data to local state when it changes
+  // Sync server data to local state when it changes
   useEffect(() => {
     setLocalFlatData(serverFlatData);
   }, [serverFlatData]);
 
-  // Handle edit column button click
+  // Handle edit column modal
   const handleEditColumn = useCallback((column: Column) => {
-    setEditingColumnId(column.id);
-    setEditingColumnName(column.name);
+    setEditColumnData(column);
+    setEditColumnName(column.name);
+    setEditColumnType(column.type);
+    setIsEditColumnModalOpen(true);
   }, []);
 
-  // Handle save column name
-  const handleSaveColumnName = useCallback(async (columnId: string, newName: string) => {
-    if (!newName.trim()) return;
+  // Handle delete column modal
+  const handleDeleteColumn = useCallback((column: Column) => {
+    setDeleteColumnData(column);
+    setIsDeleteColumnModalOpen(true);
+  }, []);
 
-    const column = columnsState.find(col => col.id === columnId);
-    if (!column) return;
+  // Save column edit
+  const handleSaveColumnEdit = useCallback(async () => {
+    if (!editColumnData || !editColumnName.trim()) return;
 
     try {
       await editColumn.mutateAsync({
-        id: columnId,
-        name: newName.trim(),
-        type: column.type,
-        position: columnsState.findIndex(col => col.id === columnId), // Pass current position
+        id: editColumnData.id,
+        name: editColumnName.trim(),
+        type: editColumnType,
+        position: columnsState.findIndex(col => col.id === editColumnData.id),
       });
     } catch (error) {
-      console.error("Failed to update column name:", error);
+      console.error("Failed to update column:", error);
     }
-  }, [columnsState, editColumn]);
+  }, [editColumnData, editColumnName, editColumnType, columnsState, editColumn]);
 
-  // Handle cancel column edit
-  const handleCancelColumnEdit = useCallback(() => {
-    setEditingColumnId(null);
-    setEditingColumnName("");
-  }, []);
+  // Delete column
+  const handleConfirmDeleteColumn = useCallback(async () => {
+    if (!deleteColumnData || !deleteColumn) return;
 
-  // CHANGE THIS: Updated saveEdit with fast local updates
-  // CHANGE THIS: Updated saveEdit with fast local updates and proper null/undefined handling
+    try {
+      await deleteColumn.mutateAsync({ id: deleteColumnData.id });
+    } catch (error) {
+      console.error("Failed to delete column:", error);
+    }
+  }, [deleteColumnData, deleteColumn]);
+
+  // Updated saveEdit with fast local updates
   const saveEdit = useCallback(async (rowId: string, columnId: string, editValue: string) => {
     const column = columnsState.find((col) => col.id === columnId);
     if (!column) return;
@@ -349,7 +389,7 @@ export default function TableView({
             ...row.cellValuesByColumnId,
             [columnId]: {
               ...existingCell,
-              id: existingCell?.id ?? `temp-${rowId}-${columnId}`, // Fallback for new cells
+              id: existingCell?.id ?? `temp-${rowId}-${columnId}`,
               createdAt: existingCell?.createdAt ?? new Date(),
               updatedAt: new Date(),
               rowId,
@@ -364,16 +404,13 @@ export default function TableView({
     }));
 
     try {
-      // Background server update - convert null to undefined for TRPC
       await upsertCellValue.mutateAsync({
         rowId,
         columnId,
-        textValue: textValue ?? undefined, // Convert null to undefined
-        numberValue: numValue ?? undefined, // Convert null to undefined
+        textValue: textValue ?? undefined,
+        numberValue: numValue ?? undefined,
       });
-      // No need for refetch - the useEffect above will sync when React Query updates
     } catch (error) {
-      // Revert on error by re-syncing with server data
       setLocalFlatData(serverFlatData);
       console.error("Failed to save cell edit", error);
       throw error;
@@ -390,52 +427,12 @@ export default function TableView({
       id: col.id,
       header: () => (
         <div className="flex items-center justify-between w-full group">
-          {editingColumnId === col.id ? (
-            <div className="flex items-center gap-1 flex-1">
-              <input
-                type="text"
-                value={editingColumnName}
-                onChange={(e) => setEditingColumnName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleSaveColumnName(col.id, editingColumnName);
-                  } else if (e.key === 'Escape') {
-                    handleCancelColumnEdit();
-                  }
-                }}
-                className="flex-1 px-1 py-0 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                autoFocus
-              />
-              <button
-                onClick={() => handleSaveColumnName(col.id, editingColumnName)}
-                className="p-1 rounded hover:bg-gray-200 flex-shrink-0"
-                title="Save"
-              >
-                <Check className="h-3 w-3 text-green-600" />
-              </button>
-              <button
-                onClick={handleCancelColumnEdit}
-                className="p-1 rounded hover:bg-gray-200 flex-shrink-0"
-                title="Cancel"
-              >
-                <X className="h-3 w-3 text-red-600" />
-              </button>
-            </div>
-          ) : (
-            <>
-              <span className="truncate flex-1">{col.name}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditColumn(col);
-                }}
-                className="ml-2 p-1 rounded hover:bg-gray-200 opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex-shrink-0"
-                title={`Edit column "${col.name}"`}
-              >
-                <Edit className="h-3 w-3 text-gray-600" />
-              </button>
-            </>
-          )}
+          <span className="truncate flex-1">{col.name}</span>
+          <ColDropdown
+            Column={col}
+            onEdit={handleEditColumn}
+            onDelete={handleDeleteColumn}
+          />
         </div>
       ),
       accessorFn: (row: Row) => {
@@ -457,18 +454,16 @@ export default function TableView({
           />
         )
       }
-    })), [visibleColumns, saveEdit, handleEditColumn, editingColumnId, editingColumnName, handleSaveColumnName, handleCancelColumnEdit])
+    })), [visibleColumns, saveEdit, handleEditColumn, handleDeleteColumn])
 
-  // CHANGE THIS: Use localFlatData for table length calculations
   const totalFetched = localFlatData.length;
 
   const fetchMoreOnBottomReached = useCallback(
     (containerRefElement?: HTMLDivElement | null) => {
       if (containerRefElement) {
         const { scrollHeight, scrollTop, clientHeight } = containerRefElement
-        //once the user has scrolled within 500px of the bottom of the table, fetch more data if we can
         if (
-          scrollHeight - scrollTop - clientHeight < 500 &&
+          scrollHeight - scrollTop - clientHeight < 1000 &&
           !isFetchingNextPage &&
           totalFetched < totalDBRowCount
         ) {
@@ -479,11 +474,10 @@ export default function TableView({
     [fetchNextPage, isFetchingNextPage, totalFetched, totalDBRowCount]
   )
 
-  useEffect(() => {
-    fetchMoreOnBottomReached(tableContainerRef.current)
-  }, [fetchMoreOnBottomReached])
+  
 
-  // CHANGE THIS: Use localFlatData instead of flatData
+
+
   const tableInstance = useReactTable({
     data: localFlatData,
     columns,
@@ -494,18 +488,17 @@ export default function TableView({
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
-    estimateSize: () => 33, //estimate row height for accurate scrollbar dragging
+    estimateSize: () => 33,
     getScrollElement: () => tableContainerRef.current,
-    //measure dynamic row height, except in firefox because it measures table border height incorrectly
     measureElement:
       typeof window !== 'undefined' &&
       navigator.userAgent.indexOf('Firefox') === -1
         ? element => element?.getBoundingClientRect().height
         : undefined,
-    overscan: 5,
+    overscan: 10,
   })
   
-  // FIXED: Add new column function with proper state management
+  // Add new column function
   const addNewColumn = async () => {
     if (!newColumnName.trim() || !tableId) return;
 
@@ -516,8 +509,6 @@ export default function TableView({
         position: columnsState.length,
         tableId: tableId,
       });
-      
-      // The onSuccess callback will handle state updates and refetch
     } catch (error) {
       console.error("Failed to add column: ", error);
     }
@@ -533,13 +524,12 @@ export default function TableView({
 
       const newRowId = newRow.id;
 
-      // Create new row data structure with empty cells for all columns
       const newRowData: Row = {
         id: newRowId,
         createdAt: new Date(),
         cellValuesByColumnId: columnsState.reduce((acc, col) => {
           acc[col.id] = {
-            id: `temp-${newRowId}-${col.id}`, // Temporary ID for new cells
+            id: `temp-${newRowId}-${col.id}`,
             createdAt: new Date(),
             updatedAt: new Date(),
             rowId: newRowId,
@@ -551,12 +541,9 @@ export default function TableView({
         }, {} as Record<string, CellValue>),
       };
 
-      // Add the new row to local state immediately for fast UI update
       setLocalFlatData((prev) => [...prev, newRowData]);
       countRefetch()
 
-      // Optionally invalidate queries to ensure data consistency
-      // This will refetch the data in the background
       queryClient.invalidateQueries({ 
         queryKey: [["row", "getRows"], { input: { tableId, limit: 200, filters, sorts, search } }] 
       });
@@ -589,153 +576,320 @@ export default function TableView({
     );
   }
 
+
+
+  const handleDeleteSelectedRows = async () => {
+    if (checkedRows.length === 0) return;
+    
+    const rowIds = checkedRows.map(row => row.id);
+
+    setCheckedRows([]);
+    
+    // Optimistic update - remove rows from local state immediately
+    setLocalFlatData(prev => prev.filter(row => !rowIds.includes(row.id)));
+    
+    try {
+      if (deleteMultipleRows && rowIds.length > 1) {
+        // Use batch delete if available and deleting multiple rows
+        await deleteMultipleRows.mutateAsync({ rowIds });
+      } else {
+        // Delete rows individually
+        await Promise.all(
+          rowIds.map(rowId => deleteRow.mutateAsync({ id: rowId }))
+        );
+      }
+      
+      // Clear checked rows after successful deletion
+      setCheckedRows([]);
+      
+      // Invalidate queries to ensure fresh data
+      queryClient.invalidateQueries({ 
+        queryKey: [["row", "getRows"], { input: { tableId, limit: 200, filters, sorts, search } }] 
+      });
+      
+    } catch (error) {
+      // Revert optimistic update on error
+      setLocalFlatData(serverFlatData);
+      console.error("Failed to delete selected rows:", error);
+      // You might want to show a toast notification here
+    }
+  };
+
+  const toggleCheckbox = (index: number, rowId: string) => {
+    setCheckedRows((prev) => {
+      const exists = prev.some((r) => r.id === rowId);
+      if (exists) {
+        return prev.filter((r) => r.id !== rowId);
+      } else {
+        return [...prev, { index, id: rowId }];
+      }
+    });
+  };
+
   return (
-    <>
-      <div
-        ref={tableContainerRef} // This is the scrollable container
-        className="flex-1 overflow-auto border-gray-300 h-[95%] relative" // 'relative' needed for sticky header if you add it
-        onScroll={(e) => fetchMoreOnBottomReached(e.currentTarget)}
-      >
-        <table className="border-b border-r border-gray-300 border-collapse"> 
-          <thead>
-            {tableInstance.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    colSpan={header.colSpan}
-                    className="border-b border-r border-black/20 bg-gray-100 p-1 text-center min-w-[120px] h-8 font-normal"
-                    style={{ width: header.getSize() }}
-                  >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
-                {/* Add Column Button */}
-                <th
-                  className="border-b border-r border-black/20 bg-gray-100 p-1 text-center min-w-[90px] h-8 font-normal cursor-pointer hover:bg-gray-200"
-                  onClick={() => setIsAddColumnDialogOpen(true)}
+<>
+  <div
+    ref={tableContainerRef}
+    className="flex-1 overflow-y-auto   overflow-x-scroll border-gray-300 h-[95%] relative"
+    onScroll={(e) => fetchMoreOnBottomReached(e.currentTarget)}
+  >
+    <table className="border-b border-r border-gray-300 border-collapse">
+      <thead>
+        {tableInstance.getHeaderGroups().map((headerGroup) => (
+          <tr key={headerGroup.id}>
+            <th
+              className="border-b border-black/20 bg-gray-100 p-1 text-center w-10 h-8 font-normal"
+            >
+              {checkedRows.length > 0 && (
+                <button
+                  className="w-full h-full flex items-center justify-center hover:bg-gray-200 rounded"
+                  onClick={handleDeleteSelectedRows}
                 >
-                  <PlusIcon className="mx-auto w-4 h-4 text-gray-600 hover:text-blue-600" />
-                </th>
-              </tr>
+                  <Trash2 className="w-4 h-4 text-gray-600 hover:text-red-600 transition-colors" />
+                </button>
+              )}
+            </th>
+            {headerGroup.headers.map((header) => (
+              <th
+                key={header.id}
+                colSpan={header.colSpan}
+                className="border-b border-r border-black/20 bg-gray-100 p-1 text-center w-32 h-8 font-normal text-nowrap  text-ellipsis"
+                style={{ width: header.getSize() }}
+              >
+                {flexRender(header.column.columnDef.header, header.getContext())}
+              </th>
             ))}
-          </thead>
-          <tbody>
-            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const row = rows[virtualRow.index]
-              if (!row) return null; // Defensive check
+            <th
+              className="border-b border-r border-black/20 bg-gray-100 p-1 text-center w-24 h-8 font-normal cursor-pointer hover:bg-gray-200"
+              onClick={() => setIsAddColumnDialogOpen(true)}
+            >
+              <PlusIcon className="mx-auto w-4 h-4 text-gray-600 hover:text-blue-600" />
+            </th>
+          </tr>
+        ))}
+      </thead>
+      <tbody>
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const row = rows[virtualRow.index]
+          //console.log(row)
+          if (!row) return null;
 
-              return (
-                <tr
-                  key={row.id}
-                  data-index={virtualRow.index} // for debugging
-                  ref={rowVirtualizer.measureElement} // measure height for dynamic sizing
-                  className="border-b border-gray-300"
-                  style={{
-                    transform: `translateY(${virtualRow.start}px)`, // Use virtualRow.start directly
-                    position: 'absolute',
-                    width: '100%',
-                    left: 0,
-                  }}
+          return (
+            <tr
+              key={row.id}
+              data-index={virtualRow.index}
+              ref={rowVirtualizer.measureElement}
+              className={`border-b border-gray-300 `}
+              style={{
+                transform: `translateY(${virtualRow.start}px)`,
+                position: 'absolute',
+                width: '100%',
+                left: 0,
+              }}
+            >
+            <td
+              className={`text-center opacity-50 border-gray-300 w-10 h-10 p-0 text-nowrap text-[10px]  whitespace-nowrap overflow-hidden text-ellipsis ${
+                checkedRows.some((r) => r.index === virtualRow.index) ? "bg-blue-50" : "bg-white"
+              }`}
+              onMouseEnter={() => setHoveredRow(virtualRow.index)}
+              onMouseLeave={() => setHoveredRow(null)}
+            >
+              {(hoveredRow === virtualRow.index || checkedRows.some((r) => r.index === virtualRow.index)) ? (
+                <input
+                  type="checkbox"
+                  checked={checkedRows.some((r) => r.index === virtualRow.index)}
+                  onChange={() => toggleCheckbox(virtualRow.index, row.original.id)}
+                  className="cursor-pointer"
+                />
+              ) : (
+                // Conditional rendering for the index
+                virtualRow.index + 1 >= 10000 ?
+                  `${((virtualRow.index + 1) / 1000)}k` :
+                  virtualRow.index + 1
+              )}
+            </td>
+              {row.getVisibleCells().map((cell) => (
+                <td
+                  key={cell.id}
+                  className={`border-r text-center border-gray-300 w-32 h-10 ${
+                    checkedRows.some((r) => r.index === virtualRow.index) ? "bg-blue-50" : "bg-white"
+                  } p-0 text-nowrap overflow-hidden text-ellipsis`}
+                  style={{ width: cell.column.getSize() }}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      className="border-r text-center border-gray-300 min-w-[120px] h-10 bg-white p-0"
-                      style={{ width: cell.column.getSize() }} // Use column's size for width
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
-                </tr>
-              )
-            })}
-            {/* Spacer row to enable proper scrolling for virtualized content */}
-            <tr style={{ height: `${rowVirtualizer.getTotalSize()}px` }} />
-          </tbody>
-        </table>
-      </div>
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </td>
+              ))}
+              <td className={` border-black/20 p-1 text-center w-24 h-8 font-normal`}>
 
-      {/* Add Column Dialog */}
-      {isAddColumnDialogOpen && (
-        <div className="fixed inset-0  backdrop-blur-sm z-40 flex items-center justify-center ">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-96">
-            <h3 className="text-lg font-semibold mb-4">Add New Column</h3>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Column Name
-              </label>
-              <input
-                type="text"
-                value={newColumnName}
-                onChange={(e) => setNewColumnName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter column name"
-                autoFocus
-              />
-            </div>
+              </td>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Column Type
-              </label>
-              <select
-                value={newColumnType}
-                onChange={(e) => setNewColumnType(e.target.value as "TEXT" | "NUMBER")}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="TEXT">Text</option>
-                <option value="NUMBER">Number</option>
-              </select>
-            </div>
+            </tr>
+          )
+        })}
+        <tr style={{ height: `${rowVirtualizer.getTotalSize()}px` }} />
+      </tbody>
+    </table>
+  </div>
 
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setIsAddColumnDialogOpen(false);
-                  setNewColumnName("");
-                  setNewColumnType("TEXT");
-                }}
-                className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={addNewColumn}
-                disabled={!newColumnName.trim() || addColumnMutation.isPending}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {addColumnMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                Add Column
-              </button>
-            </div>
-          </div>
+  {/* Add Column Dialog */}
+  {isAddColumnDialogOpen && (
+    <div className="fixed inset-0 backdrop-blur-sm z-40 flex items-center justify-center">
+      <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+        <h3 className="text-lg font-semibold mb-4">Add New Column</h3>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Column Name
+          </label>
+          <input
+            type="text"
+            value={newColumnName}
+            onChange={(e) => setNewColumnName(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Enter column name"
+            autoFocus
+          />
         </div>
-      )}
-      <div>
-      <button
-        type="button"
-        onClick={addNewRow}
-        className="absolute bottom-12 right-10 z-10 flex items-center gap-2 rounded-xl border border-gray-300 bg-white p-2 shadow-lg transition-all duration-200 hover:bg-gray-50 hover:shadow-xl"
-        title="Add new row"
-      >
-        <PlusIcon className="w-4 h-4 text-gray-600 group-hover:text-blue-600" />
-        <span className="text-sm text-gray-700">Add New Row</span>
-      </button>
-    </div>
 
-    {/* Footer */}
-    <div className="border-t border-gray-300 bg-gray-50 px-4 py-2 flex justify-between items-center text-sm text-gray-600">
-      <div className="flex items-center gap-2 cursor-pointer"
-        onClick={addNewRow}>
-        <PlusIcon className="w-4 h-4 text-gray-500" />
-        <span className="text-gray-500">Add...</span>
-      </div>
-      <div>
-        <span>{countData?.total} records</span>
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Column Type
+          </label>
+          <select
+            value={newColumnType}
+            onChange={(e) => setNewColumnType(e.target.value as "TEXT" | "NUMBER")}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="TEXT">Text</option>
+            <option value="NUMBER">Number</option>
+          </select>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              setIsAddColumnDialogOpen(false);
+              setNewColumnName("");
+              setNewColumnType("TEXT");
+            }}
+            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={addNewColumn}
+            disabled={!newColumnName.trim() || addColumnMutation.isPending}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {addColumnMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add Column
+          </button>
+        </div>
       </div>
     </div>
-    </>
+  )}
+
+  {/* Edit Column Modal */}
+  {isEditColumnModalOpen && editColumnData && (
+    <div className="fixed inset-0 backdrop-blur-sm z-40 flex items-center justify-center">
+      <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+        <h3 className="text-lg font-semibold mb-4">Edit Column</h3>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Column Name
+          </label>
+          <input
+            type="text"
+            value={editColumnName}
+            onChange={(e) => setEditColumnName(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Enter column name"
+            autoFocus
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              setIsEditColumnModalOpen(false);
+              setEditColumnData(null);
+              setEditColumnName("");
+              setEditColumnType("TEXT");
+            }}
+            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveColumnEdit}
+            disabled={!editColumnName.trim() || editColumn.isPending}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {editColumn.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Delete Column Modal */}
+  {isDeleteColumnModalOpen && deleteColumnData && (
+    <div className="fixed inset-0 backdrop-blur-sm z-40 flex items-center justify-center">
+      <div className="bg-white p-6 rounded-lg shadow-lg w-96">
+        <h3 className="text-lg font-semibold mb-4">Delete Column</h3>
+
+        <p className="text-gray-600 mb-6">
+          Are you sure you want to delete the column "{deleteColumnData.name}"?
+          This action cannot be undone and will permanently delete all data in this column.
+        </p>
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              setIsDeleteColumnModalOpen(false);
+              setDeleteColumnData(null);
+            }}
+            className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirmDeleteColumn}
+            disabled={deleteColumn?.isPending}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {deleteColumn?.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Delete Column
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  <div>
+    <button
+      type="button"
+      onClick={addNewRow}
+      className="absolute bottom-12 right-10 z-10 flex items-center gap-2 rounded-xl border border-gray-300 bg-white p-2 shadow-lg transition-all duration-200 hover:bg-gray-50 hover:shadow-xl"
+      title="Add new row"
+    >
+      <PlusIcon className="w-4 h-4 text-gray-600 group-hover:text-blue-600" />
+      <span className="text-sm text-gray-700">Add New Row</span>
+    </button>
+  </div>
+
+  {/* Footer */}
+  <div className="border-t border-gray-300 bg-gray-50 px-4 py-2 flex justify-between items-center text-sm text-gray-600">
+    <div className="flex items-center gap-2 cursor-pointer" onClick={addNewRow}>
+      <PlusIcon className="w-4 h-4 text-gray-500" />
+      <span className="text-gray-500">Add...</span>
+    </div>
+    <div>
+      <span>{countData?.total} records</span>
+    </div>
+  </div>
+</>
   )
 }

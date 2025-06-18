@@ -5,8 +5,27 @@ export const tableRouter = createTRPCRouter({
   create: protectedProcedure
     .input(z.object({ name: z.string(), baseId: z.string() }))
     .mutation(async ({ input: { name, baseId }, ctx }) => {
-      return await ctx.db.table.create({
-        data: { name, baseId },
+      // Create table and default view in a transaction
+      return await ctx.db.$transaction(async (tx) => {
+        // Create the table
+        const table = await tx.table.create({
+          data: { name, baseId },
+        });
+
+        // Create a default view for the table
+        await tx.view.create({
+          data: {
+            tableId: table.id,
+            viewName: "Default View",
+            viewData: {
+              filters: [],
+              sortCriteria: [],
+              hiddenColumns: []
+            }
+          },
+        });
+
+        return table;
       });
     }),
 
@@ -20,12 +39,71 @@ export const tableRouter = createTRPCRouter({
     }),
 
   delete: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ input: { id }, ctx }) => {
-      return await ctx.db.table.delete({
-        where: { id },
+  .input(z.object({ id: z.string() }))
+  .mutation(async ({ input: { id }, ctx }) => {
+    // First verify the table belongs to the current user
+    const table = await ctx.db.table.findUnique({
+      where: { id },
+      select: { 
+        base: {
+          select: { createdById: true }
+        },
+        columns: {
+          select: { id: true }
+        },
+        rows: {
+          select: { id: true }
+        }
+      },
+    });
+
+    if (!table) {
+      throw new Error("Table not found");
+    }
+
+
+    // Manual cascade delete to handle foreign key constraints
+    // 1. Delete all cell values first
+    const columnIds = table.columns.map(col => col.id);
+    if (columnIds.length > 0) {
+      await ctx.db.cellValue.deleteMany({
+        where: {
+          columnId: { in: columnIds }
+        }
       });
-    }),
+    }
+
+    // 2. Delete all rows
+    const rowIds = table.rows.map(row => row.id);
+    if (rowIds.length > 0) {
+      await ctx.db.row.deleteMany({
+        where: {
+          id: { in: rowIds }
+        }
+      });
+    }
+
+    // 3. Delete all columns
+    if (columnIds.length > 0) {
+      await ctx.db.column.deleteMany({
+        where: {
+          id: { in: columnIds }
+        }
+      });
+    }
+
+    // 4. Delete all views
+    await ctx.db.view.deleteMany({
+      where: {
+        tableId: id
+      }
+    });
+
+    // 5. Finally delete the table
+    return await ctx.db.table.delete({
+      where: { id },
+    });
+  }),
 
   getByBase: protectedProcedure
     .input(z.object({ baseId: z.string() }))

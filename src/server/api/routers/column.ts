@@ -31,7 +31,40 @@ export const columnRouter = createTRPCRouter({
   delete: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input: { id }, ctx }) => {
-      return await ctx.db.column.delete({ where: { id } });
+      // First verify the column belongs to a table in a base owned by the current user
+      const column = await ctx.db.column.findUnique({
+        where: { id },
+        select: { 
+          table: {
+            select: {
+              base: {
+                select: { createdById: true }
+              }
+            }
+          }
+        },
+      });
+
+      if (!column) {
+        throw new Error("Column not found");
+      }
+
+      if (column.table.base.createdById !== ctx.session.user.id) {
+        throw new Error("Unauthorized: You can only delete columns from your own bases");
+      }
+
+      // Manual cascade delete to handle foreign key constraints
+      // 1. Delete all cell values for this column first
+      await ctx.db.cellValue.deleteMany({
+        where: {
+          columnId: id
+        }
+      });
+
+      // 2. Finally delete the column
+      return await ctx.db.column.delete({
+        where: { id },
+      });
     }),
 
   getByTable: protectedProcedure

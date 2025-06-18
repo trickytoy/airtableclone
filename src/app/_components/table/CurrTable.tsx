@@ -18,6 +18,10 @@ import {
   Check,
   CirclePlus,
   Loader2,
+  FileText,
+  GanttChart,
+  List,
+  PlusSquare,
 } from "lucide-react";
 //import TableView from "../base/Table";
 import { FilterPopup } from "../base/filterPopup";
@@ -191,7 +195,20 @@ export function CurrTable({ tableId }: CurrTableProps) {
         Column_id: id,
         Column_type: type,
       })) || [];
-      await generateTableMutation.mutateAsync({ tableId, count: 500,  columns: simplified, });
+      await generateTableMutation.mutateAsync({ tableId, count: 1000,  columns: simplified, });
+    } catch (error) {
+      // Error is handled in the mutation's onError
+    }
+  };
+
+    const add1K = async () => {
+    if (!tableId) return;
+    try {
+      const simplified = columns?.data?.map(({ id, type }) => ({
+        Column_id: id,
+        Column_type: type,
+      })) || [];
+      await generateTableMutation.mutateAsync({ tableId, count: 1000,  columns: simplified, });
     } catch (error) {
       // Error is handled in the mutation's onError
     }
@@ -210,7 +227,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const handleApplyFilters = (filters: FilterCondition[]) => {
     setActiveFilters(filters);
     setActiveViewId(null); // Clear active view when manually applying filters
-    console.log("Applied filters:", filters);
+    //console.log("Applied filters:", filters);
   };
 
   const handleCloseFilter = () => {
@@ -238,7 +255,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
   };
 
 
-  console.log(columns.data)
+  //console.log(columns.data)
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -407,6 +424,23 @@ export function CurrTable({ tableId }: CurrTableProps) {
               )}
               <span>Add 100K Rows</span>
             </button>
+
+            <button 
+              className={`flex items-center space-x-1 text-sm ${
+                isDisabled 
+                  ? 'text-gray-400 cursor-not-allowed' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+              onClick={() => !isDisabled && add1K()}
+              disabled={isDisabled}
+            >
+              {generateTableMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <CirclePlus className="w-4 h-4" />
+              )}
+              <span>Add 1K Rows</span>
+            </button>
           </div>
 
           <div
@@ -502,52 +536,107 @@ export function CurrTable({ tableId }: CurrTableProps) {
             </div>
 
             {/* Create Section */}
-            <div className="border-t border-gray-200 p-2">
-              <div className="flex items-center justify-between px-2 py-1">
-                <span className={`text-sm font-medium ${
-                  isDisabled ? 'text-gray-400' : 'text-gray-700'
-                }`}>Create...</span>
-                <ChevronDown className={`w-4 h-4 ${
-                  isDisabled ? 'text-gray-300' : 'text-gray-400'
-                }`} />
-              </div>
+            <div className="border-t ml-2 mr-2 border-gray-200">
+              <div className="p-2">
+                <div className="flex items-center justify-between px-2 py-1">
+                  <span className="text-sm font-medium text-gray-700">Create...</span>
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                </div>
 
-              {/* View Types */}
-              <div className="space-y-1">
-                {[
-                  { icon: Grid3X3, label: "Grid" },
-                  { icon: Calendar, label: "Calendar" },
-                  { icon: ImageIcon, label: "Gallery" },
-                  { icon: Trello, label: "Kanban" },
-                ].map(({ icon: Icon, label }) => (
-                  <div
-                    key={label}
-                    className={`flex items-center justify-between px-2 py-1 rounded group ${
-                      isDisabled 
-                        ? 'cursor-not-allowed' 
-                        : 'hover:bg-gray-100 cursor-pointer'
-                    }`}
-                  >
+                {/* View Types */}
+                <div className="mt-1 space-y-1">
+                  {/* Grid */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
                     <div className="flex items-center">
-                      <Icon className={`w-4 h-4 mr-2 ${
-                        isDisabled ? 'text-gray-300' : 'text-gray-500'
-                      }`} />
-                      <span className={`text-sm ${
-                        isDisabled ? 'text-gray-400' : 'text-gray-700'
-                      }`}>{label}</span>
+                      <Grid3X3 className="w-4 h-4 text-blue-500 mr-2 " />
+                      <span className="text-sm text-gray-700">Grid</span>
                     </div>
-                    <button 
-                      className={`${
-                        isDisabled 
-                          ? 'text-gray-300 cursor-not-allowed' 
-                          : 'text-gray-400 hover:text-gray-600'
-                      }`}
-                      disabled={isDisabled}
-                    >
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Plus className="w-4 h-4 " />
+                    </button>
+                  </div>
+
+                  {/* Calendar */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
+                    <div className="flex items-center">
+                      <Calendar className="w-4 h-4 text-[#D54401] mr-2" />
+                      <span className="text-sm text-gray-700">Calendar</span>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600">
                       <Plus className="w-4 h-4" />
                     </button>
                   </div>
-                ))}
+
+                  {/* Gallery */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
+                    <div className="flex items-center">
+                      <ImageIcon className="w-4 h-4 text-[#9965F0] mr-2" />
+                      <span className="text-sm text-gray-700">Gallery</span>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Kanban */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
+                    <div className="flex items-center">
+                      <Trello className="w-4 h-4 text-green-700 mr-2" />
+                      <span className="text-sm text-gray-700">Kanban</span>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+
+
+                  {/* List */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
+                    <div className="flex items-center">
+                      <List className="w-4 h-4 text-blue-900 mr-2" />
+                      <span className="text-sm text-gray-700">List</span>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Gantt */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
+                    <div className="flex items-center">
+                      <GanttChart className="w-4 h-4 text-teal-800 mr-2" />
+                      <span className="text-sm text-gray-700">Gantt</span>
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">Team</span>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* New section */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
+                    <div className="flex items-center">
+                      <span className="text-sm text-gray-700">New section</span>
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">Team</span>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="border-t ml-2 mr-2 border-gray-200"></div>
+
+                  {/* Form */}
+                  <div className="flex items-center justify-between px-2 py-1 hover:bg-gray-100 rounded group">
+                    <div className="flex items-center">
+                      <FileText className="w-4 h-4 text-gray-500 mr-2" />
+                      <span className="text-sm text-gray-700">Form</span>
+                    </div>
+                    <button className="text-gray-400 hover:text-gray-600">
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
