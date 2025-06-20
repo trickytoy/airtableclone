@@ -20,9 +20,10 @@ type SortPopupProps = {
   onClose: () => void
   onApply: (sorts: SortCriteria[]) => void
   columns: Column[]
+  initialSorts?: SortCriteria[]
 }
 
-export function SortPopup({ isOpen, onClose, onApply, columns }: SortPopupProps) {
+export function SortPopup({ isOpen, onClose, onApply, columns, initialSorts = [] }: SortPopupProps) {
   const [sorts, setSorts] = useState<SortCriteria[]>([])
   const popupRef = useRef<HTMLDivElement>(null)
   const applyTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for debounce timeout
@@ -56,6 +57,12 @@ export function SortPopup({ isOpen, onClose, onApply, columns }: SortPopupProps)
       }
     }
   }, [isOpen, onClose])
+
+  useEffect(() => {
+    if (isOpen) {
+      setSorts(initialSorts);
+    }
+  }, [isOpen, initialSorts]);
 
   const addSort = () => {
     const firstCol = columns[0]

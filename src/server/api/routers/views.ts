@@ -61,6 +61,56 @@ export const viewRouter = createTRPCRouter({
         updatedAt: newView.updatedAt.toISOString(),
       };
     }),
+  
+  update: protectedProcedure
+  .input(
+    z.object({
+      viewId: z.string(),
+      viewData: z.object({
+        filters: z.array(
+          z.object({
+            id: z.string(),
+            columnId: z.string(),
+            operator: z.enum([
+              "is",
+              "is not",
+              "contains",
+              "does not contain",
+              "is empty",
+              "is not empty",
+              "=",
+              "!=",
+              ">",
+              "<",
+            ]),
+            value: z.string(),
+          })
+        ),
+        sortCriteria: z.array(
+          z.object({
+            id: z.string(),
+            columnId: z.string(),
+            direction: z.enum(["asc", "desc"]),
+          })
+        ),
+        hiddenColumns: z.array(z.string()),
+      }),
+    })
+  )
+  .mutation(async ({ input, ctx }) => {
+    const updated = await ctx.db.view.update({
+      where: { id: input.viewId },
+      data: { viewData: input.viewData },
+    });
+
+    return {
+      id: updated.id,
+      viewName: updated.viewName,
+      viewData: input.viewData,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    };
+  }),
 
   // Route to get all views for a specific table
   getAllForTable: protectedProcedure

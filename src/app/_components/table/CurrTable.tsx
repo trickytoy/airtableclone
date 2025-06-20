@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ChevronDown,
   Plus,
@@ -48,7 +48,6 @@ type SortCriteria = {
   direction: "asc" | "desc";
 };
 
-
 type ViewData = {
   filters: FilterCondition[];
   sortCriteria: SortCriteria[];
@@ -74,6 +73,10 @@ export function CurrTable({ tableId }: CurrTableProps) {
   const [views, setViews] = useState<View[]>([]);
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
 
+  // Ref to track if we're currently applying a view to prevent update loops
+  const isApplyingViewRef = useRef(false);
+  const lastViewUpdateRef = useRef<string | null>(null);
+
   const utils = api.useUtils();
 
   // Fetch existing views when tableId changes
@@ -81,6 +84,49 @@ export function CurrTable({ tableId }: CurrTableProps) {
     tableId!,
     { enabled: !!tableId }
   );
+
+  // Update view mutation
+  const updateViewMutation = api.views.update.useMutation({
+    onSuccess: async (updatedView) => {
+      // Update the view in local state
+      setViews(prev => prev.map(view => 
+        view.id === updatedView.id 
+          ? {
+              id: updatedView.id,
+              viewName: updatedView.viewName,
+              viewData: updatedView.viewData as ViewData,
+            }
+          : view
+      ));
+      
+      // Optionally invalidate the views query to keep data in sync
+      if (tableId) {
+        await utils.views.getAllForTable.invalidate(tableId);
+      }
+    },
+    onError: (error) => {
+      console.error('Failed to update view:', error);
+    },
+  });
+
+  // Load persisted activeViewId from localStorage when tableId changes
+  useEffect(() => {
+    if (tableId) {
+      const savedViewId = localStorage.getItem(`activeView_${tableId}`);
+      if (savedViewId) {
+        setActiveViewId(savedViewId);
+      }
+    }
+  }, [tableId]);
+
+  // Save activeViewId to localStorage whenever it changes
+  useEffect(() => {
+    if (tableId && activeViewId) {
+      localStorage.setItem(`activeView_${tableId}`, activeViewId);
+    } else if (tableId && activeViewId === null) {
+      localStorage.removeItem(`activeView_${tableId}`);
+    }
+  }, [tableId, activeViewId]);
 
   // Update views state when query data changes
   useEffect(() => {
@@ -91,8 +137,53 @@ export function CurrTable({ tableId }: CurrTableProps) {
         viewData: view.viewData as ViewData,
       }));
       setViews(convertedViews);
+      
+      // If we have a saved activeViewId, apply that view
+      if (activeViewId && !isApplyingViewRef.current) {
+        const savedView = convertedViews.find(v => v.id === activeViewId);
+        if (savedView) {
+          isApplyingViewRef.current = true;
+          setActiveFilters(savedView.viewData.filters);
+          setActiveSorts(savedView.viewData.sortCriteria);
+          setHiddenColumns(savedView.viewData.hiddenColumns);
+          // Reset the flag after a brief delay
+        }
+      }
     }
-  }, [viewsQuery.data]);
+  }, [viewsQuery.data, activeViewId]);
+
+  // Auto-save view data when filters, sorts, or hidden columns change
+  useEffect(() => {
+    // Don't auto-save if we're currently applying a view or if there's no active view
+    if (isApplyingViewRef.current || !activeViewId || !tableId) {
+      return;
+    }
+
+    // Create a unique key for this update to prevent duplicate saves
+    const updateKey = `${activeViewId}_${JSON.stringify({
+      filters: activeFilters,
+      sortCriteria: activeSorts,
+      hiddenColumns: hiddenColumns,
+    })}`;
+
+    // Don't save if this is the same update we just made
+    if (lastViewUpdateRef.current === updateKey) {
+      return;
+    }
+
+    lastViewUpdateRef.current = updateKey;
+
+    // Debounce the save operation
+      updateViewMutation.mutate({
+        viewId: activeViewId,
+        viewData: {
+          filters: activeFilters,
+          sortCriteria: activeSorts,
+          hiddenColumns: hiddenColumns,
+        },
+      });
+
+  }, [activeFilters, activeSorts, hiddenColumns, activeViewId, tableId, updateViewMutation]);
 
   const deleteAllMutation = api.utils.deleteAllRowsAndCellsByTable.useMutation({
     onSuccess: async () => {
@@ -174,10 +265,14 @@ export function CurrTable({ tableId }: CurrTableProps) {
   };
 
   const applyView = (view: View) => {
+    isApplyingViewRef.current = true;
     setActiveFilters(view.viewData.filters);
     setActiveSorts(view.viewData.sortCriteria);
     setHiddenColumns(view.viewData.hiddenColumns);
     setActiveViewId(view.id);
+    
+    // Reset the flag after a brief delay
+    isApplyingViewRef.current = false;
   };
 
   const isLoading = deleteAllMutation.isPending || generateTableMutation.isPending;
@@ -201,7 +296,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
     }
   };
 
-    const add1K = async () => {
+  const add1K = async () => {
     if (!tableId) return;
     try {
       const simplified = columns?.data?.map(({ id, type }) => ({
@@ -226,7 +321,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
 
   const handleApplyFilters = (filters: FilterCondition[]) => {
     setActiveFilters(filters);
-    setActiveViewId(null); // Clear active view when manually applying filters
+    // Don't clear active view - let it auto-save
     //console.log("Applied filters:", filters);
   };
 
@@ -236,7 +331,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
 
   const handleApplySort = (sorts: SortCriteria[]) => {
     setActiveSorts(sorts);
-    setActiveViewId(null); // Clear active view when manually applying sorts
+    // Don't clear active view - let it auto-save
     console.log("Applied sorts:", sorts);
   };
 
@@ -246,7 +341,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
 
   const handleApplyHideFields = (hiddenColumnIds: string[]) => {
     setHiddenColumns(hiddenColumnIds);
-    setActiveViewId(null); // Clear active view when manually hiding fields
+    // Don't clear active view - let it auto-save
     console.log("Hidden columns:", hiddenColumnIds);
   };
 
@@ -254,6 +349,16 @@ export function CurrTable({ tableId }: CurrTableProps) {
     setIsHideFieldsOpen(false);
   };
 
+  // Clear active view function for when user wants to start fresh
+  const clearActiveView = () => {
+    setActiveViewId(null);
+    setActiveFilters([]);
+    setActiveSorts([]);
+    setHiddenColumns([]);
+    if (tableId) {
+      localStorage.removeItem(`activeView_${tableId}`);
+    }
+  };
 
   //console.log(columns.data)
 
@@ -299,6 +404,22 @@ export function CurrTable({ tableId }: CurrTableProps) {
                 onAdd={addView}
               />
             </div>
+
+            {/* Clear View Button */}
+            {activeViewId && (
+              <button 
+                className={`flex items-center space-x-1 text-sm ${
+                  isDisabled 
+                    ? 'text-gray-400 cursor-not-allowed' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                onClick={() => !isDisabled && clearActiveView()}
+                disabled={isDisabled}
+                title="Clear active view"
+              >
+                <span>Clear view</span>
+              </button>
+            )}
 
             {/* Hide Fields Button with Popup */}
             <div className="relative">
@@ -358,6 +479,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
                 onClose={handleCloseFilter}
                 onApply={handleApplyFilters}
                 columns={columns.data ?? []}
+                initialFilters={activeFilters} // Add this line
               />
             </div>
 
@@ -388,6 +510,7 @@ export function CurrTable({ tableId }: CurrTableProps) {
                 onClose={handleCloseSort}
                 onApply={handleApplySort}
                 columns={columns.data ?? []}
+                initialSorts={activeSorts}
               />
             </div>
 
@@ -526,6 +649,9 @@ export function CurrTable({ tableId }: CurrTableProps) {
                     <div className="flex items-center">
                       <Grid3X3 className="w-4 h-4 mr-2" />
                       <span className="text-sm">{view.viewName}</span>
+                      {updateViewMutation.isPending && activeViewId === view.id && (
+                        <Loader2 className="w-3 h-3 animate-spin ml-2 text-gray-400" />
+                      )}
                     </div>
                     {activeViewId === view.id && (
                       <Check className="w-4 h-4 text-blue-600" />

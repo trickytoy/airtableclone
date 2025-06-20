@@ -65,6 +65,7 @@ export default function TableView({
   hiddenColumns = [],
   search = ""
 }: TableViewProps) {
+  const utils = api.useUtils();
   const queryClient = useQueryClient();
   const tableContainerRef = useRef<HTMLDivElement>(null)
   // State for hovered row
@@ -100,6 +101,17 @@ export default function TableView({
   // TRPC Queries and Mutations
   const columnQuery = api.column.getByTable.useQuery({ tableId: tableId ?? "" });
   const upsertCellValue = api.cellValue.upsert.useMutation({});
+  const upsertCellValueSilent = api.cellValue.upsert.useMutation({
+    onSuccess: () => {
+      console.log('Silent save completed');
+    },
+    onError: (error) => {
+      console.error('Silent save failed:', error);
+    },
+    meta: {
+      skipInvalidation: true
+    }
+  });
   const editColumn = api.column.edit.useMutation({
     onSuccess: () => {
       void columnQuery.refetch();
@@ -182,6 +194,18 @@ export default function TableView({
 
   const { data: countData, refetch: countRefetch } = api.row.count.useQuery({ tableId: tableId ?? "" });
   const totalDBRowCount = countData?.total ?? 0;
+
+  useEffect(() => {
+    const handleFocusChange = () => {
+      console.log("Focused element:", document.activeElement)
+    }
+
+    window.addEventListener("focusin", handleFocusChange)
+
+    return () => {
+      window.removeEventListener("focusin", handleFocusChange)
+    }
+  }, [])
 
   // Function to generate sample columns with faker data
   const generateSampleColumns = useCallback(() => {
@@ -363,7 +387,7 @@ export default function TableView({
     }
   }, [deleteColumnData, deleteColumn]);
 
-  // Updated saveEdit with fast local updates
+    // Updated saveEdit with fast local updates
   const saveEdit = useCallback(async (rowId: string, columnId: string, editValue: string) => {
     const column = columnsState.find((col) => col.id === columnId);
     if (!column) return;
@@ -379,7 +403,10 @@ export default function TableView({
 
     const textValue = isTextColumn ? editValue : null;
 
-    // Immediate UI update
+    // Store the current state for potential rollback
+    const previousData = localFlatData;
+
+    // Immediate UI update (optimistic)
     setLocalFlatData(prev => prev.map(row => {
       if (row.id === rowId) {
         const existingCell = row.cellValuesByColumnId[columnId];
@@ -404,58 +431,92 @@ export default function TableView({
     }));
 
     try {
-      await upsertCellValue.mutateAsync({
+      await utils.cellValue.updateCellValue.fetch({
+        rowId,
+        columnId,
+        textValue: typeof editValue === 'string' ? editValue : undefined,
+        numberValue: typeof editValue === 'number' ? editValue : undefined,
+      });
+    } catch (error) {
+      console.error('Failed to update cell:', error);
+    }
+
+  }, [columnsState, upsertCellValue, localFlatData]);
+
+  const saveEditOnly = useCallback(async (rowId: string, columnId: string, editValue: string) => {
+    console.log('Silent save called for:', { rowId, columnId, editValue });
+    
+    const column = columnsState.find((col) => col.id === columnId);
+    if (!column) return;
+
+    const isNumberColumn = column.type === "NUMBER";
+    const isTextColumn = column.type === "TEXT";
+
+    const numValue = isNumberColumn
+      ? editValue === "" || isNaN(Number(editValue))
+        ? null
+        : Number.parseFloat(editValue)
+      : null;
+
+    const textValue = isTextColumn ? editValue : null;
+
+    try {
+      // Use the silent mutation that won't trigger re-renders
+      await upsertCellValueSilent.mutateAsync({
         rowId,
         columnId,
         textValue: textValue ?? undefined,
         numberValue: numValue ?? undefined,
       });
+      
+      console.log('Silent save successful for:', { rowId, columnId, editValue });
+      
     } catch (error) {
-      setLocalFlatData(serverFlatData);
-      console.error("Failed to save cell edit", error);
-      throw error;
+      console.error("Failed to save cell edit silently", error);
+      // Don't throw the error to avoid disrupting the tabbing flow
     }
-  }, [columnsState, upsertCellValue, serverFlatData]);
+  }, [columnsState, upsertCellValueSilent]);
 
-  // Filter out hidden columns and map columns for react-table
-  const visibleColumns = useMemo(() => {
-    return columnsState.filter(col => !hiddenColumns.includes(col.id));
-  }, [columnsState, hiddenColumns]);
+    // Filter out hidden columns and map columns for react-table
+    const visibleColumns = useMemo(() => {
+      return columnsState.filter(col => !hiddenColumns.includes(col.id));
+    }, [columnsState, hiddenColumns]);
 
-  const columns: ColumnDef<Row, string | number | null>[] = useMemo(
-    () => visibleColumns.map((col) => ({
-      id: col.id,
-      header: () => (
-        <div className="flex items-center justify-between w-full group">
-          <span className="truncate flex-1">{col.name}</span>
-          <ColDropdown
-            Column={col}
-            onEdit={handleEditColumn}
-            onDelete={handleDeleteColumn}
-          />
-        </div>
-      ),
-      accessorFn: (row: Row) => {
-        const cell = row.cellValuesByColumnId?.[col.id]
-        if (!cell) return null
-        return col.type === "NUMBER" ? (cell.numberValue ?? null) : (cell.textValue ?? null)
-      },
-      cell: (info) => {
-        const val = info.getValue()
-        const row = info.row.original
+const columns: ColumnDef<Row, string | number | null>[] = useMemo(
+  () => visibleColumns.map((col) => ({
+    id: col.id,
+    header: () => (
+      <div className="flex items-center justify-between w-full group">
+        <span className="truncate flex-1">{col.name}</span>
+        <ColDropdown
+          Column={col}
+          onEdit={handleEditColumn}
+          onDelete={handleDeleteColumn}
+        />
+      </div>
+    ),
+    accessorFn: (row: Row) => {
+      const cell = row.cellValuesByColumnId?.[col.id]
+      if (!cell) return null
+      return col.type === "NUMBER" ? (cell.numberValue ?? null) : (cell.textValue ?? null)
+    },
+    cell: (info) => {
+      const val = info.getValue()
+      const row = info.row.original
 
-        return (
-          <EditableCell
-            val={val}
-            rowId={row.id}
-            colId={col.id}
-            type={col.type}
-            onSave={saveEdit}
-          />
-        )
-      }
-    })), [visibleColumns, saveEdit, handleEditColumn, handleDeleteColumn])
-
+      return (
+        <EditableCell
+          val={val}
+          rowId={row.id}
+          colId={col.id}
+          type={col.type}
+          onSave={saveEdit}        // Regular save (with re-render)
+          onSaveOnly={saveEditOnly} // Save-only (no re-render)
+        />
+      )
+    }
+  })), [visibleColumns, saveEdit, saveEditOnly, handleEditColumn, handleDeleteColumn]) // Added saveEditOnly dependency
+  
   const totalFetched = localFlatData.length;
 
   const fetchMoreOnBottomReached = useCallback(
@@ -473,10 +534,6 @@ export default function TableView({
     },
     [fetchNextPage, isFetchingNextPage, totalFetched, totalDBRowCount]
   )
-
-  
-
-
 
   const tableInstance = useReactTable({
     data: localFlatData,
@@ -677,6 +734,7 @@ export default function TableView({
           return (
             <tr
               key={row.id}
+              tabIndex={-1}
               data-index={virtualRow.index}
               ref={rowVirtualizer.measureElement}
               className={`border-b border-gray-300 `}
@@ -691,6 +749,7 @@ export default function TableView({
               className={`text-center opacity-50 border-gray-300 w-10 h-10 p-0 text-nowrap text-[10px]  whitespace-nowrap overflow-hidden text-ellipsis ${
                 checkedRows.some((r) => r.index === virtualRow.index) ? "bg-blue-50" : "bg-white"
               }`}
+              tabIndex={-1}
               onMouseEnter={() => setHoveredRow(virtualRow.index)}
               onMouseLeave={() => setHoveredRow(null)}
             >
@@ -710,6 +769,7 @@ export default function TableView({
             </td>
               {row.getVisibleCells().map((cell) => (
                 <td
+                  tabIndex={-1}
                   key={cell.id}
                   className={`border-r text-center border-gray-300 w-32 h-10 ${
                     checkedRows.some((r) => r.index === virtualRow.index) ? "bg-blue-50" : "bg-white"

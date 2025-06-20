@@ -21,12 +21,13 @@ type FilterPopupProps = {
   onClose: () => void
   onApply: (filters: FilterCondition[]) => void
   columns: Column[]
+  initialFilters?: FilterCondition[] // Add this line
 }
 
 const textOperators: FilterCondition["operator"][] = ["contains", "does not contain", "is", "is not", "is empty", "is not empty"]
 const numberOperators: FilterCondition["operator"][] = ["=", "!=", ">", "<", "is empty", "is not empty"]
 
-export function FilterPopup({ isOpen, onClose, onApply, columns }: FilterPopupProps) {
+export function FilterPopup({ isOpen, onClose, onApply, columns, initialFilters = [] }: FilterPopupProps) {
   const [filters, setFilters] = useState<FilterCondition[]>([])
   const popupRef = useRef<HTMLDivElement>(null)
   const applyTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Ref for debounce timeout
@@ -61,6 +62,11 @@ export function FilterPopup({ isOpen, onClose, onApply, columns }: FilterPopupPr
     }
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+  if (isOpen) {
+    setFilters(initialFilters);
+  }
+}, [isOpen, initialFilters]);
 
   const addFilter = () => {
     const firstCol = columns[0]
